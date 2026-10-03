@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>موعدي | احجز موعدك مع الطبيب المناسب</title>
+<meta name="description" content="موعدي - منصة تساعدك في العثور على الطبيب المناسب وحجز موعدك بسهولة.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="header">
+<div class="container nav-container">
+<a href="#" class="logo"><div class="logo-icon">+</div><div class="logo-text"><strong>موعدي</strong><span>احجز صحتك بسهولة</span></div></a>
+<nav class="main-nav"><a href="#home" class="active">الرئيسية</a><a href="#specialties">التخصصات</a><a href="#doctors">الأطباء</a><a href="#how-it-works">كيف يعمل؟</a></nav>
+<div class="nav-actions"><button class="login-btn">تسجيل الدخول</button><button class="register-btn">إنشاء حساب</button></div>
+<button class="menu-btn" id="menuBtn">☰</button>
+</div>
+<div class="mobile-menu" id="mobileMenu"><a href="#home">الرئيسية</a><a href="#specialties">التخصصات</a><a href="#doctors">الأطباء</a><a href="#how-it-works">كيف يعمل؟</a><button class="mobile-login">تسجيل الدخول</button><button class="mobile-register">إنشاء حساب</button></div>
+</header>
+
+<main>
+<section class="hero" id="home">
+<div class="hero-background"></div>
+<div class="container hero-container">
+<div class="hero-content">
+<div class="hero-badge"><span class="pulse-dot"></span>احجز موعدك بسهولة وأمان</div>
+<h1>طبيبك المناسب <span>على بُعد موعد</span></h1>
+<p>ابحث عن الطبيب المناسب لك حسب التخصص والمنطقة، تعرّف على مواعيده وأسعار الكشف، واحجز موعدك بكل سهولة.</p>
+<div class="hero-actions"><button class="primary-btn" id="heroBookingBtn">احجز موعدك الآن <span>←</span></button><button class="secondary-btn">اكتشف الأطباء</button></div>
+</div>
+<div class="hero-visual">
+<div class="hero-card">
+<div class="hero-card-top"><div class="doctor-avatar">👨‍⚕️</div><div><span class="available">● متاح للحجز</span><h3>أطباء موثوقون</h3><p>اختر الطبيب المناسب لك</p></div></div>
+<div class="hero-card-divider"></div>
+<div class="hero-stat"><div><strong>+120</strong><span>طبيب</span></div><div><strong>+35</strong><span>تخصص</span></div><div><strong>+2K</strong><span>موعد</span></div></div>
+</div>
+<div class="floating-card floating-card-one"><span>✓</span><div><strong>حجز مؤكد</strong><small>تم تأكيد موعدك</small></div></div>
+<div class="floating-card floating-card-two"><span>⏰</span><div><strong>تذكير بالموعد</strong><small>لن تنسى موعدك القادم</small></div></div>
+</div>
+</div>
+<div class="container">
+<div class="search-panel">
+<div class="search-title"><div class="search-icon">⌕</div><div><strong>ابحث عن طبيب</strong><span>اعثر على الطبيب المناسب لاحتياجك</span></div></div>
+<div class="search-fields">
+<div class="search-field"><label>الطبيب أو التخصص</label><div class="field-input"><span>⌕</span><input type="text" id="doctorSearch" placeholder="مثال: طبيب أطفال"></div></div>
+<div class="search-field"><label>المنطقة</label><div class="field-input"><span>⌖</span><select id="locationSearch"><option value="">اختر المنطقة</option><option>الخرطوم</option><option>أم درمان</option><option>بحري</option><option>الأبيض</option><option>مدني</option><option>عطبرة</option></select></div></div>
+<button class="search-btn" id="searchBtn">بحث عن طبيب <span>←</span></button>
+</div>
+</div>
+</div>
+</section>
+
+<section class="section specialties" id="specialties"><div class="container">
+<div class="section-heading"><div><span class="section-label">التخصصات الطبية</span><h2>ابحث حسب التخصص</h2></div><a href="#" class="view-all">عرض جميع التخصصات ←</a></div>
+<div class="specialties-grid">
+<button class="specialty-card"><div class="specialty-icon">❤️</div><strong>أمراض القلب</strong><span>12 طبيب</span></button>
+<button class="specialty-card"><div class="specialty-icon">🧠</div><strong>الأعصاب</strong><span>8 أطباء</span></button>
+<button class="specialty-card"><div class="specialty-icon">👩‍⚕️</div><strong>النساء والتوليد</strong><span>18 طبيب</span></button>
+<button class="specialty-card"><div class="specialty-icon">👶</div><strong>طب الأطفال</strong><span>15 طبيب</span></button>
+<button class="specialty-card"><div class="specialty-icon">🦷</div><strong>طب الأسنان</strong><span>20 طبيب</span></button>
+<button class="specialty-card"><div class="specialty-icon">🩺</div><strong>الباطنية</strong><span>16 طبيب</span></button>
+</div></div></section>
+
+<section class="section doctors-section" id="doctors"><div class="container">
+<div class="section-heading"><div><span class="section-label">أطباء موثوقون</span><h2>أطباء يمكنك الحجز معهم</h2></div><a href="#" class="view-all">عرض جميع الأطباء ←</a></div>
+<div class="doctors-grid">
+<article class="doctor-card"><div class="doctor-image"><div class="doctor-placeholder">👨‍⚕️</div><span class="verified">✓ موثوق</span></div><div class="doctor-info"><div class="doctor-rating">★ 4.9</div><h3>د. أحمد محمد</h3><p class="doctor-specialty">أخصائي الأمراض الباطنية</p><div class="doctor-details"><span>📍 الخرطوم</span><span>💰 15,000 ج</span></div><div class="doctor-availability"><span></span>متاح للحجز اليوم</div><button class="book-btn">عرض الملف وحجز موعد ←</button></div></article>
+<article class="doctor-card"><div class="doctor-image"><div class="doctor-placeholder female">👩‍⚕️</div><span class="verified">✓ موثوق</span></div><div class="doctor-info"><div class="doctor-rating">★ 4.8</div><h3>د. سارة أحمد</h3><p class="doctor-specialty">أخصائية نساء وتوليد</p><div class="doctor-details"><span>📍 أم درمان</span><span>💰 20,000 ج</span></div><div class="doctor-availability"><span></span>متاح للحجز اليوم</div><button class="book-btn">عرض الملف وحجز موعد ←</button></div></article>
+<article class="doctor-card"><div class="doctor-image"><div class="doctor-placeholder">👨‍⚕️</div><span class="verified">✓ موثوق</span></div><div class="doctor-info"><div class="doctor-rating">★ 4.9</div><h3>د. محمد علي</h3><p class="doctor-specialty">أخصائي طب الأطفال</p><div class="doctor-details"><span>📍 بحري</span><span>💰 12,000 ج</span></div><div class="doctor-availability"><span></span>متاح للحجز غداً</div><button class="book-btn">عرض الملف وحجز موعد ←</button></div></article>
+</div></div></section>
+
+<section class="section how-section" id="how-it-works"><div class="container">
+<div class="section-heading centered"><span class="section-label">طريقة الاستخدام</span><h2>احجز موعدك في 3 خطوات فقط</h2><p>جعلنا عملية حجز الموعد بسيطة وسريعة للجميع.</p></div>
+<div class="steps">
+<div class="step"><div class="step-number">01</div><div class="step-icon">🔎</div><h3>ابحث عن طبيب</h3><p>اختر التخصص أو المنطقة وابحث عن الطبيب المناسب.</p></div><div class="step-line"></div>
+<div class="step"><div class="step-number">02</div><div class="step-icon">📅</div><h3>اختر الموعد</h3><p>شاهد المواعيد المتاحة واختر اليوم والوقت المناسب.</p></div><div class="step-line"></div>
+<div class="step"><div class="step-number">03</div><div class="step-icon">✓</div><h3>أكد حجزك</h3><p>أكد الحجز واستلم تذكيرًا بموعدك قبل الزيارة.</p></div>
+</div></div></section>
+
+<section class="cta-section"><div class="container"><div class="cta-box"><div><span>صحتك أولويتنا</span><h2>ابدأ رحلتك الصحية اليوم</h2><p>اعثر على الطبيب المناسب واحجز موعدك بسهولة.</p></div><button class="cta-btn">ابحث عن طبيب ←</button></div></div></section>
+</main>
+
+<footer class="footer"><div class="container footer-content">
+<div class="footer-brand"><div class="logo"><div class="logo-icon">+</div><div class="logo-text"><strong>موعدي</strong><span>احجز صحتك بسهولة</span></div></div><p>منصة تساعدك في العثور على الطبيب المناسب وحجز موعدك بسهولة وأمان.</p></div>
+<div class="footer-column"><h4>روابط سريعة</h4><a href="#home">الرئيسية</a><a href="#specialties">التخصصات</a><a href="#doctors">الأطباء</a><a href="#how-it-works">كيف يعمل؟</a></div>
+<div class="footer-column"><h4>للطبيب والعيادة</h4><a href="#">سجل عيادتك</a><a href="#">دخول الطبيب</a><a href="#">مركز المساعدة</a></div>
+<div class="footer-column"><h4>تواصل معنا</h4><a href="tel:+249000000000">📞 +249 00 000 0000</a><a href="mailto:info@maw3idi.com">✉ info@maw3idi.com</a></div>
+</div><div class="footer-bottom"><div class="container"><span>© 2026 موعدي. جميع الحقوق محفوظة.</span><span>منصة حجز المواعيد الطبية</span></div></div></footer>
+<script src="app.js"></script>
+</body>
+</html>
