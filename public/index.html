@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#123b52">
+  <title>موعدي | احجز موعدك الطبي بسهولة</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <a class="brand" href="#">
+        <span class="brand-mark">✚</span>
+        <span>
+          <strong>موعدي</strong>
+          <small>صحتك أولاً</small>
+        </span>
+      </a>
+
+      <button class="menu-toggle" id="menuToggle" aria-label="فتح القائمة">☰</button>
+
+      <nav class="main-nav" id="mainNav">
+        <a href="#home" class="active">الرئيسية</a>
+        <a href="#specialties">التخصصات</a>
+        <a href="#doctors">الأطباء</a>
+        <a href="#how">كيف يعمل؟</a>
+        <a href="#contact">تواصل معنا</a>
+      </nav>
+
+      <div class="nav-actions">
+        <button class="btn btn-outline" id="loginBtn">تسجيل الدخول</button>
+        <button class="btn btn-gold" id="registerBtn">إنشاء حساب</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="home">
+      <div class="hero-shape hero-shape-one"></div>
+      <div class="hero-shape hero-shape-two"></div>
+
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <div class="eyebrow"><span>●</span> رعاية صحية أقرب إليك</div>
+          <h1>احجز موعدك الطبي<br><span>بسهولة واطمئنان</span></h1>
+          <p>
+            ابحث عن الطبيب المناسب لك، تعرّف على مواعيده وخدماته،
+            واحجز موعدك في دقائق دون عناء الانتظار.
+          </p>
+
+          <div class="hero-buttons">
+            <a href="#search" class="btn btn-gold btn-large">احجز موعدك الآن <span>←</span></a>
+            <a href="#how" class="hero-link">كيف يعمل موعدي؟ <span>◀</span></a>
+          </div>
+
+          <div class="hero-trust">
+            <div class="avatars">
+              <span>م</span><span>س</span><span>أ</span><span>+</span>
+            </div>
+            <div>
+              <strong>آلاف المرضى</strong>
+              <small>يثقون بخدمة موعدي</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-doctor">
+          <div class="doctor-glow"></div>
+          <div class="doctor-card">
+            <img
+              src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=900&q=85"
+              alt="طبيبة"
+              loading="eager">
+            <div class="doctor-floating-card">
+              <span class="status-dot"></span>
+              <div>
+                <strong>د. سارة أحمد</strong>
+                <small>طبيبة نساء وتوليد</small>
+              </div>
+              <b>★ 4.9</b>
+            </div>
+          </div>
+          <div class="hero-badge badge-calendar">📅 <strong>مواعيد مرنة</strong><small>اختر الوقت المناسب لك</small></div>
+          <div class="hero-badge badge-safe">✓ <strong>حجز آمن</strong><small>بياناتك محفوظة</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="search-section" id="search">
+      <div class="container">
+        <div class="search-box">
+          <div class="search-heading">
+            <span class="search-icon">⌕</span>
+            <div>
+              <h2>ابحث عن طبيبك</h2>
+              <p>ابحث بالاسم أو التخصص أو المنطقة</p>
+            </div>
+          </div>
+
+          <form id="searchForm" class="search-form">
+            <label>
+              <span>اسم الطبيب أو التخصص</span>
+              <div class="field">
+                <span>⌕</span>
+                <input id="doctorSearch" type="search" placeholder="مثال: طبيب أطفال">
+              </div>
+            </label>
+
+            <label>
+              <span>المنطقة</span>
+              <div class="field">
+                <span>⌖</span>
+                <select id="areaSelect">
+                  <option value="">كل المناطق</option>
+                  <option>الأبيض</option>
+                  <option>الخرطوم</option>
+                  <option>أم درمان</option>
+                  <option>بحري</option>
+                </select>
+              </div>
+            </label>
+
+            <button class="btn btn-primary search-btn" type="submit">بحث عن الأطباء</button>
+          </form>
+          <div id="searchMessage" class="search-message"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section specialties-section" id="specialties">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <span class="section-kicker">تخصصات طبية</span>
+            <h2>اختر التخصص الذي تحتاجه</h2>
+          </div>
+          <a href="#doctors" class="view-all">عرض جميع التخصصات ←</a>
+        </div>
+
+        <div class="specialty-grid">
+          <button class="specialty-card specialty-blue" data-specialty="باطنية">
+            <span class="specialty-icon">♡</span>
+            <strong>باطنية</strong>
+            <small>رعاية وتشخيص شامل</small>
+            <i>←</i>
+          </button>
+          <button class="specialty-card specialty-purple" data-specialty="أطفال">
+            <span class="specialty-icon">♧</span>
+            <strong>أطفال</strong>
+            <small>رعاية صحة الطفل</small>
+            <i>←</i>
+          </button>
+          <button class="specialty-card specialty-rose" data-specialty="نساء وتوليد">
+            <span class="specialty-icon">✿</span>
+            <strong>نساء وتوليد</strong>
+            <small>صحة المرأة والحمل</small>
+            <i>←</i>
+          </button>
+          <button class="specialty-card specialty-green" data-specialty="أسنان">
+            <span class="specialty-icon">✦</span>
+            <strong>أسنان</strong>
+            <small>صحة وجمال الأسنان</small>
+            <i>←</i>
+          </button>
+          <button class="specialty-card specialty-orange" data-specialty="عيون">
+            <span class="specialty-icon">◉</span>
+            <strong>عيون</strong>
+            <small>فحص وعلاج العيون</small>
+            <i>←</i>
+          </button>
+          <button class="specialty-card specialty-teal" data-specialty="جلدية">
+            <span class="specialty-icon">◇</span>
+            <strong>جلدية</strong>
+            <small>صحة البشرة والشعر</small>
+            <i>←</i>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="trust-strip">
+      <div class="container trust-grid">
+        <div><span>✓</span><div><strong>أطباء موثوقون</strong><small>اختيار متخصصين بعناية</small></div></div>
+        <div><span>⚡</span><div><strong>حجز سريع</strong><small>في دقائق ومن أي مكان</small></div></div>
+        <div><span>🔒</span><div><strong>خصوصية وأمان</strong><small>نحافظ على بياناتك</small></div></div>
+        <div><span>☎</span><div><strong>دعم مستمر</strong><small>نحن هنا لمساعدتك</small></div></div>
+      </div>
+    </section>
+
+    <section class="section doctors-section" id="doctors">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <span class="section-kicker">أطباء مميزون</span>
+            <h2>تعرّف على أطبائنا</h2>
+          </div>
+          <a href="#search" class="view-all">البحث عن طبيب ←</a>
+        </div>
+
+        <div class="doctor-grid" id="doctorGrid">
+          <article class="doctor-profile" data-specialty="نساء وتوليد" data-area="الأبيض" data-name="سارة أحمد">
+            <div class="doctor-photo">
+              <img src="https://images.unsplash.com/photo-1594824476967-48c8b964273f?auto=format&fit=crop&w=600&q=85" alt="د. سارة أحمد" loading="lazy">
+              <span class="verified">✓ موثّق</span>
+            </div>
+            <div class="doctor-info">
+              <span class="doctor-specialty">نساء وتوليد</span>
+              <h3>د. سارة أحمد</h3>
+              <p>خبرة أكثر من 10 سنوات في رعاية النساء ومتابعة الحمل والولادة.</p>
+              <div class="doctor-meta"><span>⌖ الأبيض</span><span>★ 4.9</span></div>
+              <button class="btn btn-primary full book-btn" data-doctor="د. سارة أحمد">احجز موعدًا</button>
+            </div>
+          </article>
+
+          <article class="doctor-profile" data-specialty="باطنية" data-area="الخرطوم" data-name="محمد عبد الله">
+            <div class="doctor-photo">
+              <img src="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=600&q=85" alt="د. محمد عبد الله" loading="lazy">
+              <span class="verified">✓ موثّق</span>
+            </div>
+            <div class="doctor-info">
+              <span class="doctor-specialty">باطنية</span>
+              <h3>د. محمد عبد الله</h3>
+              <p>تشخيص ومتابعة الأمراض الباطنية مع اهتمام خاص بالرعاية الوقائية.</p>
+              <div class="doctor-meta"><span>⌖ الخرطوم</span><span>★ 4.8</span></div>
+              <button class="btn btn-primary full book-btn" data-doctor="د. محمد عبد الله">احجز موعدًا</button>
+            </div>
+          </article>
+
+          <article class="doctor-profile" data-specialty="أطفال" data-area="أم درمان" data-name="ريم خالد">
+            <div class="doctor-photo">
+              <img src="https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&w=600&q=85" alt="د. ريم خالد" loading="lazy">
+              <span class="verified">✓ موثّق</span>
+            </div>
+            <div class="doctor-info">
+              <span class="doctor-specialty">أطفال</span>
+              <h3>د. ريم خالد</h3>
+              <p>رعاية الأطفال ومتابعة النمو والتطعيمات والاستشارات الصحية.</p>
+              <div class="doctor-meta"><span>⌖ أم درمان</span><span>★ 4.9</span></div>
+              <button class="btn btn-primary full book-btn" data-doctor="د. ريم خالد">احجز موعدًا</button>
+            </div>
+          </article>
+        </div>
+
+        <div id="noResults" class="no-results" hidden>
+          لم يتم العثور على طبيب مطابق للبحث. جرّب تخصصًا أو منطقة أخرى.
+        </div>
+      </div>
+    </section>
+
+    <section class="how-section" id="how">
+      <div class="container">
+        <div class="section-head centered">
+          <div>
+            <span class="section-kicker">بخطوات بسيطة</span>
+            <h2>كيف يعمل موعدي؟</h2>
+            <p>من البحث حتى حجز الموعد، كل شيء أصبح أسهل.</p>
+          </div>
+        </div>
+
+        <div class="steps">
+          <div class="step"><span>01</span><div class="step-icon">⌕</div><h3>ابحث</h3><p>ابحث عن الطبيب أو التخصص أو المنطقة المناسبة.</p></div>
+          <div class="step"><span>02</span><div class="step-icon">☑</div><h3>اختر الموعد</h3><p>اطلع على أوقات الطبيب واختر الموعد الذي يناسبك.</p></div>
+          <div class="step"><span>03</span><div class="step-icon">✓</div><h3>أكد الحجز</h3><p>أكد بياناتك واحصل على تفاصيل موعدك بسهولة.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <div class="container cta-card">
+        <div>
+          <span class="section-kicker">ابدأ الآن</span>
+          <h2>صحتك تستحق موعدًا أسهل</h2>
+          <p>ابحث عن طبيبك واحجز موعدك الطبي في دقائق.</p>
+        </div>
+        <a href="#search" class="btn btn-gold btn-large">احجز موعدك الآن ←</a>
+      </div>
+    </section>
+  </main>
+
+  <footer id="contact">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="#"><span class="brand-mark">✚</span><span><strong>موعدي</strong><small>صحتك أولاً</small></span></a>
+        <p>منصة سهلة وموثوقة للبحث عن الأطباء وحجز المواعيد الطبية.</p>
+      </div>
+      <div><h4>روابط سريعة</h4><a href="#home">الرئيسية</a><a href="#specialties">التخصصات</a><a href="#doctors">الأطباء</a></div>
+      <div><h4>للمساعدة</h4><a href="#how">كيف يعمل؟</a><a href="#">الأسئلة الشائعة</a><a href="#">سياسة الخصوصية</a></div>
+      <div><h4>تواصل معنا</h4><a href="tel:+249000000000">☎ +249 00 000 0000</a><a href="mailto:info@maw3idi.com">✉ info@maw3idi.com</a></div>
+    </div>
+    <div class="copyright">© 2026 موعدي — جميع الحقوق محفوظة</div>
+  </footer>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
