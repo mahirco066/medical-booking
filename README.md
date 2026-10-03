@@ -1,9 +1,29 @@
-# medical-booking
-واجهة أولية لمنصة حجز المواعيد الطبية "موعدي".
+# منصة موعدي - المرحلة الثانية
 
-الملفات الحالية:
-- public/index.html
-- public/styles.css
-- public/app.js
+هذه النسخة تضيف:
+- Node.js + Express
+- تشغيل المشروع على Render
+- API health check على `/api/health`
+- نقطة اتصال جاهزة لـ Supabase
+- حماية مفاتيح Supabase من الرفع إلى GitHub عبر `.gitignore`
 
-هذه نسخة واجهة أولية ببيانات تجريبية. الخطوة التالية: إضافة server.js و package.json ثم ربط Supabase ونظام الحسابات والحجوزات.
+## التشغيل المحلي
+
+```bash
+npm install
+npm start
+```
+
+ثم افتح:
+http://localhost:3000
+
+اختبار الخادم:
+http://localhost:3000/api/health
+
+## متغيرات البيئة
+
+في Render سنضيف:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+لا تضع مفتاح Service Role داخل ملفات الواجهة أو GitHub.
