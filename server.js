@@ -23,13 +23,29 @@ const pool = new Pool({
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+/* =========================================================
+   EXPRESS
+========================================================= */
 
-app.use(express.static(PUBLIC_DIR));
+app.use(
+  express.json({
+    limit: "10mb"
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "10mb"
+  })
+);
+
+app.use(
+  express.static(PUBLIC_DIR)
+);
 
 /* =========================================================
-   Helpers
+   HELPERS
 ========================================================= */
 
 function makeId() {
@@ -48,13 +64,18 @@ function hashToken(token) {
 }
 
 function clean(value) {
-  if (value === undefined || value === null) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
     return null;
   }
 
   const result = String(value).trim();
 
-  return result === "" ? null : result;
+  return result === ""
+    ? null
+    : result;
 }
 
 function normalizeUsername(value) {
@@ -64,111 +85,140 @@ function normalizeUsername(value) {
 }
 
 function validDate(value) {
-  if (!value) return false;
-
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value));
+  return /^\d{4}-\d{2}-\d{2}$/.test(
+    String(value || "")
+  );
 }
 
 function validTime(value) {
-  if (!value) return false;
-
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(value));
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(
+    String(value || "")
+  );
 }
 
-function jsonOk(res, data = {}) {
+function jsonOk(res, data) {
   return res.json({
     ok: true,
-    ...data
+    ...(data || {})
   });
 }
 
-function jsonError(res, message, status = 400) {
-  return res.status(status).json({
+function jsonError(
+  res,
+  message,
+  status
+) {
+  return res.status(status || 400).json({
     ok: false,
     error: message
   });
 }
 
 /* =========================================================
-   Password hashing
+   PASSWORD
 ========================================================= */
 
 async function hashPassword(password) {
-  return new Promise((resolve, reject) => {
-    const salt = crypto.randomBytes(16).toString("hex");
+  return new Promise(
+    (resolve, reject) => {
+      const salt =
+        crypto
+          .randomBytes(16)
+          .toString("hex");
 
-    crypto.scrypt(
-      String(password),
-      salt,
-      64,
-      (err, derivedKey) => {
-        if (err) {
-          return reject(err);
+      crypto.scrypt(
+        String(password),
+        salt,
+        64,
+        function (err, derivedKey) {
+          if (err) {
+            return reject(err);
+          }
+
+          resolve(
+            salt +
+              ":" +
+              derivedKey.toString("hex")
+          );
         }
-
-        resolve(
-          `${salt}:${derivedKey.toString("hex")}`
-        );
-      }
-    );
-  });
+      );
+    }
+  );
 }
 
-async function verifyPassword(password, storedHash) {
+async function verifyPassword(
+  password,
+  storedHash
+) {
   if (!storedHash) {
     return false;
   }
 
-  const parts = String(storedHash).split(":");
+  const parts =
+    String(storedHash).split(":");
 
   if (parts.length !== 2) {
     return false;
   }
 
   const salt = parts[0];
-  const stored = Buffer.from(parts[1], "hex");
 
-  return new Promise((resolve, reject) => {
-    crypto.scrypt(
-      String(password),
-      salt,
-      stored.length,
-      (err, derivedKey) => {
-        if (err) {
-          return reject(err);
+  const stored =
+    Buffer.from(parts[1], "hex");
+
+  return new Promise(
+    (resolve, reject) => {
+      crypto.scrypt(
+        String(password),
+        salt,
+        stored.length,
+        function (err, derivedKey) {
+          if (err) {
+            return reject(err);
+          }
+
+          if (
+            derivedKey.length !==
+            stored.length
+          ) {
+            return resolve(false);
+          }
+
+          resolve(
+            crypto.timingSafeEqual(
+              derivedKey,
+              stored
+            )
+          );
         }
-
-        if (derivedKey.length !== stored.length) {
-          return resolve(false);
-        }
-
-        resolve(
-          crypto.timingSafeEqual(
-            derivedKey,
-            stored
-          )
-        );
-      }
-    );
-  });
+      );
+    }
+  );
 }
 
 /* =========================================================
-   Database helpers
+   DATABASE HELPERS
 ========================================================= */
 
-async function columnExists(tableName, columnName) {
-  const result = await pool.query(
-    `
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = $1
-      AND column_name = $2
-    LIMIT 1
-    `,
-    [tableName, columnName]
-  );
+async function columnExists(
+  tableName,
+  columnName
+) {
+  const result =
+    await pool.query(
+      `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = $1
+        AND column_name = $2
+      LIMIT 1
+      `,
+      [
+        tableName,
+        columnName
+      ]
+    );
 
   return result.rowCount > 0;
 }
@@ -178,28 +228,41 @@ async function addColumnIfMissing(
   columnName,
   definition
 ) {
-  const exists = await columnExists(
-    tableName,
-    columnName
-  );
+  const exists =
+    await columnExists(
+      tableName,
+      columnName
+    );
 
   if (!exists) {
     await pool.query(
-      `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${definition}`
+      'ALTER TABLE "' +
+        tableName +
+        '" ADD COLUMN "' +
+        columnName +
+        '" ' +
+        definition
     );
 
     console.log(
-      `Added missing column ${tableName}.${columnName}`
+      "Added missing column " +
+        tableName +
+        "." +
+        columnName
     );
   }
 }
 
 /* =========================================================
-   Database initialization
+   DATABASE INITIALIZATION
 ========================================================= */
 
 async function initDatabase() {
-  console.log("Initializing Neon database...");
+  console.log(
+    "Initializing Neon database..."
+  );
+
+  /* USERS */
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -215,6 +278,8 @@ async function initDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  /* PATIENTS */
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS patients (
@@ -234,6 +299,8 @@ async function initDatabase() {
     )
   `);
 
+  /* STAFF */
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS staff_users (
       id UUID PRIMARY KEY,
@@ -245,248 +312,5 @@ async function initDatabase() {
       email TEXT,
       active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS services (
-      id UUID PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      duration_minutes INTEGER DEFAULT 30,
-      price NUMERIC(12,2) DEFAULT 0,
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS appointments (
-      id UUID PRIMARY KEY,
-      patient_id UUID,
-      doctor_id UUID,
-      service_id UUID,
-      appointment_date DATE NOT NULL,
-      appointment_time TIME NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      notes TEXT,
-      cancellation_reason TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS medical_records (
-      id UUID PRIMARY KEY,
-      patient_id UUID,
-      doctor_id UUID,
-      appointment_id UUID,
-      diagnosis TEXT,
-      treatment TEXT,
-      prescription TEXT,
-      notes TEXT,
-      record_date DATE NOT NULL DEFAULT CURRENT_DATE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ads (
-      id UUID PRIMARY KEY,
-      title TEXT NOT NULL,
-      description TEXT,
-      image_url TEXT,
-      target_url TEXT,
-      advertiser_name TEXT,
-      category TEXT,
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      starts_at TIMESTAMPTZ,
-      ends_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ad_impressions (
-      id UUID PRIMARY KEY,
-      ad_id UUID,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ad_clicks (
-      id UUID PRIMARY KEY,
-      ad_id UUID,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id UUID PRIMARY KEY,
-      user_id UUID,
-      staff_user_id UUID,
-      access_token_hash TEXT,
-      refresh_token_hash TEXT,
-      expires_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  /* =======================================================
-     Compatibility with old database schemas
-  ======================================================= */
-
-  await addColumnIfMissing(
-    "users",
-    "updated_at",
-    "TIMESTAMPTZ DEFAULT NOW()"
-  );
-
-  await addColumnIfMissing(
-    "users",
-    "active",
-    "BOOLEAN DEFAULT TRUE"
-  );
-
-  await addColumnIfMissing(
-    "patients",
-    "updated_at",
-    "TIMESTAMPTZ DEFAULT NOW()"
-  );
-
-  await addColumnIfMissing(
-    "patients",
-    "active",
-    "BOOLEAN DEFAULT TRUE"
-  );
-
-  await addColumnIfMissing(
-    "staff_users",
-    "updated_at",
-    "TIMESTAMPTZ DEFAULT NOW()"
-  );
-
-  await addColumnIfMissing(
-    "staff_users",
-    "full_name",
-    "TEXT"
-  );
-
-  await addColumnIfMissing(
-    "staff_users",
-    "role",
-    "TEXT DEFAULT 'staff'"
-  );
-
-  await addColumnIfMissing(
-    "staff_users",
-    "phone",
-    "TEXT"
-  );
-
-  await addColumnIfMissing(
-    "staff_users",
-    "email",
-    "TEXT"
-  );
-
-  await addColumnIfMissing(
-    "staff_users",
-    "active",
-    "BOOLEAN DEFAULT TRUE"
-  );
-
-  await addColumnIfMissing(
-    "services",
-    "description",
-    "TEXT"
-  );
-
-  await addColumnIfMissing(
-    "services",
-    "duration_minutes",
-    "INTEGER DEFAULT 30"
-  );
-
-  await addColumnIfMissing(
-    "services",
-    "price",
-    "NUMERIC(12,2) DEFAULT 0"
-  );
-
-  await addColumnIfMissing(
-    "services",
-    "active",
-    "BOOLEAN DEFAULT TRUE"
-  );
-
-  await addColumnIfMissing(
-    "services",
-    "updated_at",
-    "TIMESTAMPTZ DEFAULT NOW()"
-  );
-
-  await addColumnIfMissing(
-    "appointments",
-    "patient_id",
-    "UUID"
-  );
-
-  await addColumnIfMissing(
-    "appointments",
-    "doctor_id",
-    "UUID"
-  );
-
-  await addColumnIfMissing(
-    "appointments",
-    "service_id",
-    "UUID"
-  );
-
-  await addColumnIfMissing(
-    "appointments",
-    "status",
-    "TEXT DEFAULT 'pending'"
-  );
-
-  await addColumnIfMissing(
-    "appointments",
-    "notes",
-    "TEXT"
-  );
-
-  await addColumnIfMissing(
-    "appointments",
-    "cancellation_reason",
-    "TEXT"
-  );
-
-  await addColumnIfMissing(
-    "appointments",
-    "updated_at",
-    "TIMESTAMPTZ DEFAULT NOW()"
-  );
-
-  await addColumnIfMissing(
-    "medical_records",
-    "patient_id",
-    "UUID"
-  );
-
-  await addColumnIfMissing(
-    "medical_records",
-    "doctor_id",
-    "UUID"
-  );
-
-  await addColumnIfMissing(
-    "medical_records",
+      updated_at TIMESTAMP_
 ```
