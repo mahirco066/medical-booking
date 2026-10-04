@@ -579,7 +579,7 @@ async function createIndexes() {
    DEFAULT SERVICES
 ========================================================= */
 
-```js
+
 async function seedServices() {
   const services = [
     {
