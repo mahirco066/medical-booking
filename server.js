@@ -4,12 +4,12 @@ const crypto = require("crypto");
 const { Pool } = require("pg");
 
 const app = express();
-const PORT = process.env.PORT || 10000;
 
+const PORT = process.env.PORT || 10000;
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!DATABASE_URL) {
-  console.error("ERROR: DATABASE_URL is not configured.");
+  console.error("DATABASE_URL is missing");
   process.exit(1);
 }
 
@@ -28,16 +28,15 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
    HELPERS
 ========================================================= */
 
-function jsonError(res, message, status = 400, extra = {}) {
+function jsonError(res, message, status = 400) {
   return res.status(status).json({
     ok: false,
-    error: message,
-    ...extra
+    error: message
   });
 }
 
-function jsonOk(res, data = {}, status = 200) {
-  return res.status(status).json({
+function jsonOk(res, data = {}) {
+  return res.json({
     ok: true,
     ...data
   });
@@ -48,23 +47,21 @@ function normalizeUsername(value) {
 }
 
 function validDate(value) {
-  if (!value) return false;
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value));
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
 
 function validTime(value) {
-  if (!value) return false;
-  return /^([01]\d|2[0-3]):([0-5]\d)(:\d{2})?$/.test(String(value));
+  return /^\d{2}:\d{2}$/.test(String(value || ""));
 }
 
 function getBearerToken(req) {
   const header = req.headers.authorization || "";
 
   if (!header.startsWith("Bearer ")) {
-    return null;
+    return "";
   }
 
-  return header.substring(7).trim() || null;
+  return header.slice(7).trim();
 }
 
 function randomToken(bytes = 48) {
@@ -74,34 +71,42 @@ function randomToken(bytes = 48) {
 function hashToken(token) {
   return crypto
     .createHash("sha256")
-    .update(String(token))
+    .update(token)
     .digest("hex");
 }
 
-function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
-  const derived = crypto.scryptSync(
-    String(password),
-    salt,
-    64
-  );
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+
+  const hash = crypto
+    .scryptSync(String(password), salt, 64)
+    .toString("hex");
 
   return {
     salt,
-    hash: derived.toString("hex")
+    hash
   };
 }
 
-function verifyPassword(password, storedHash, salt) {
+function verifyPassword(password, salt, storedHash) {
   try {
-    const derived = crypto.scryptSync(
+    const calculated = crypto.scryptSync(
       String(password),
       salt,
       64
-    ).toString("hex");
+    );
 
-    return crypto.timingSafeEqual(
-      Buffer.from(derived, "hex"),
-      Buffer.from(storedHash, "hex")
+    const stored = Buffer.from(
+      storedHash,
+      "hex"
+    );
+
+    return (
+      stored.length === calculated.length &&
+      crypto.timingSafeEqual(
+        stored,
+        calculated
+      )
     );
   } catch {
     return false;
@@ -114,10 +119,10 @@ function mapPatient(row) {
   return {
     id: row.id,
     auth_user_id: row.auth_user_id,
-    full_name: row.full_name,
-    phone: row.phone,
-    username: row.username,
-    email: row.email || null,
+    full_name: row.full_name || "",
+    phone: row.phone || "",
+    username: row.username || "",
+    email: row.email || "",
     created_at: row.created_at
   };
 }
@@ -127,12 +132,35 @@ function mapService(row) {
 
   return {
     id: row.id,
-    name: row.name,
+    name: row.name || "",
     description: row.description || "",
-    duration_minutes: row.duration_minutes || 30,
+    duration_minutes:
+      row.duration_minutes ?? 30,
     price: row.price ?? null,
     active: row.active !== false,
-    created_at: row.created_at
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+function mapDoctor(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    full_name: row.full_name || "",
+    phone: row.phone || "",
+    username: row.username || "",
+    role: row.role || "doctor",
+    specialty: row.specialty || "",
+    area: row.area || "",
+    email: row.email || "",
+    image_url: row.image_url || "",
+    bio: row.bio || "",
+    active: row.active !== false,
+    available: row.available !== false,
+    created_at: row.created_at,
+    updated_at: row.updated_at
   };
 }
 
@@ -142,315 +170,253 @@ function mapAppointment(row) {
   return {
     id: row.id,
     patient_id: row.patient_id,
-    patient_name: row.patient_name || null,
-    patient_phone: row.patient_phone || null,
-    doctor_id: row.doctor_id || null,
-    doctor_name: row.doctor_name || null,
-    service_id: row.service_id || null,
-    service_name: row.service_name || null,
+    doctor_id: row.doctor_id,
+    doctor_name: row.doctor_name || "",
+    service_id: row.service_id,
+    service_name: row.service_name || "",
     appointment_date: row.appointment_date,
     appointment_time: row.appointment_time,
     status: row.status,
     notes: row.notes || "",
+    confirmed: row.confirmed === true,
+    cancelled: row.cancelled === true,
     created_at: row.created_at,
-    confirmed_at: row.confirmed_at || null,
-    cancelled_at: row.cancelled_at || null
-  };
-}
-
-function normalizeAppointmentInput(body = {}) {
-  return {
-    service_id: body.service_id || null,
-    service: body.service || body.service_name || null,
-    doctor_id: body.doctor_id || null,
-    appointment_date: body.appointment_date || body.date || null,
-    appointment_time: body.appointment_time || body.time || null,
-    notes: body.notes || ""
+    updated_at: row.updated_at
   };
 }
 
 /* =========================================================
-   DATABASE INITIALIZATION
+   DATABASE
 ========================================================= */
 
 async function initDatabase() {
-  const client = await pool.connect();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'patient',
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      email TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS patients (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      auth_user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      full_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      username TEXT,
+      email TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      auth_user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      full_name TEXT NOT NULL,
+      phone TEXT,
+      username TEXT,
+      role TEXT NOT NULL DEFAULT 'doctor',
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS services (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT UNIQUE NOT NULL,
+      description TEXT DEFAULT '',
+      duration_minutes INTEGER NOT NULL DEFAULT 30,
+      price NUMERIC(12,2),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS appointments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      doctor_id UUID REFERENCES staff_users(id) ON DELETE SET NULL,
+      service_id UUID REFERENCES services(id) ON DELETE SET NULL,
+      appointment_date DATE NOT NULL,
+      appointment_time TIME NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT DEFAULT '',
+      confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+      cancelled BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS medical_records (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      doctor_id UUID REFERENCES staff_users(id) ON DELETE SET NULL,
+      diagnosis TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      prescription TEXT DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS ads (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
+      target_url TEXT DEFAULT '',
+      advertiser_name TEXT DEFAULT '',
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS ad_impressions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ad_id UUID NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS ad_clicks (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ad_id UUID NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT UNIQUE NOT NULL,
+      refresh_token_hash TEXT UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      refresh_expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  /* Doctor fields */
+  await pool.query(`
+    ALTER TABLE staff_users
+      ADD COLUMN IF NOT EXISTS specialty TEXT DEFAULT '',
+      ADD COLUMN IF NOT EXISTS area TEXT DEFAULT '',
+      ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '',
+      ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT '',
+      ADD COLUMN IF NOT EXISTS available BOOLEAN NOT NULL DEFAULT TRUE;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS appointments_date_idx
+      ON appointments(appointment_date);
+
+    CREATE INDEX IF NOT EXISTS appointments_patient_idx
+      ON appointments(patient_id);
+
+    CREATE INDEX IF NOT EXISTS appointments_status_idx
+      ON appointments(status);
+
+    CREATE INDEX IF NOT EXISTS sessions_token_idx
+      ON sessions(token_hash);
+
+    CREATE INDEX IF NOT EXISTS ads_active_idx
+      ON ads(active);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS appointments_doctor_slot_unique
+      ON appointments(doctor_id, appointment_date, appointment_time)
+      WHERE doctor_id IS NOT NULL
+        AND status IN ('pending','confirmed');
+
+    CREATE UNIQUE INDEX IF NOT EXISTS appointments_general_slot_unique
+      ON appointments(appointment_date, appointment_time)
+      WHERE doctor_id IS NULL
+        AND status IN ('pending','confirmed');
+  `);
+
+  const serviceCount = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM services`
+  );
+
+  if (serviceCount.rows[0].count === 0) {
+    await pool.query(`
+      INSERT INTO services
+        (name, description, duration_minutes, price)
+      VALUES
+        ('كشف طبي', 'كشف طبي عام', 30, NULL),
+        ('استشارة', 'استشارة طبية', 30, NULL),
+        ('متابعة', 'متابعة حالة المريض', 30, NULL),
+        ('فحص وتشخيص', 'فحص وتشخيص طبي', 45, NULL)
+      ON CONFLICT (name) DO NOTHING
+    `);
+  }
+
+  await seedAdmin();
+}
+
+async function seedAdmin() {
+  const username =
+    process.env.ADMIN_USERNAME
+      ? normalizeUsername(process.env.ADMIN_USERNAME)
+      : "";
+
+  const password =
+    process.env.ADMIN_PASSWORD || "";
+
+  if (!username || !password) {
+    return;
+  }
+
+  const existing = await pool.query(
+    `SELECT id FROM users WHERE username=$1`,
+    [username]
+  );
+
+  if (existing.rowCount) {
+    await pool.query(
+      `UPDATE users
+       SET role='admin', active=TRUE, updated_at=NOW()
+       WHERE username=$1`,
+      [username]
+    );
+
+    return;
+  }
+
+  const { salt, hash } =
+    hashPassword(password);
+
+  const client =
+    await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        password_salt TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'patient',
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        email TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
+    const userResult =
+      await client.query(
+        `INSERT INTO users
+          (username,password_hash,password_salt,role,active,email)
+         VALUES ($1,$2,$3,'admin',TRUE,NULL)
+         RETURNING id`,
+        [username, hash, salt]
+      );
 
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS patients (
-        id UUID PRIMARY KEY,
-        auth_user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        full_name TEXT NOT NULL,
-        phone TEXT NOT NULL,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS staff_users (
-        id UUID PRIMARY KEY,
-        auth_user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        full_name TEXT NOT NULL,
-        phone TEXT,
-        username TEXT UNIQUE NOT NULL,
-        role TEXT NOT NULL DEFAULT 'doctor',
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS services (
-        id UUID PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL,
-        description TEXT DEFAULT '',
-        duration_minutes INTEGER NOT NULL DEFAULT 30,
-        price NUMERIC(12,2),
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS appointments (
-        id UUID PRIMARY KEY,
-        patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        doctor_id UUID REFERENCES staff_users(id) ON DELETE SET NULL,
-        service_id UUID REFERENCES services(id) ON DELETE SET NULL,
-        appointment_date DATE NOT NULL,
-        appointment_time TIME NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        notes TEXT DEFAULT '',
-        confirmed_at TIMESTAMPTZ,
-        cancelled_at TIMESTAMPTZ,
-        confirmed_by UUID REFERENCES staff_users(id) ON DELETE SET NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS medical_records (
-        id UUID PRIMARY KEY,
-        patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        doctor_id UUID REFERENCES staff_users(id) ON DELETE SET NULL,
-        diagnosis TEXT DEFAULT '',
-        treatment TEXT DEFAULT '',
-        notes TEXT DEFAULT '',
-        record_date DATE NOT NULL DEFAULT CURRENT_DATE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS ads (
-        id UUID PRIMARY KEY,
-        title TEXT NOT NULL,
-        description TEXT DEFAULT '',
-        image_url TEXT DEFAULT '',
-        target_url TEXT DEFAULT '',
-        business_name TEXT DEFAULT '',
-        business_type TEXT DEFAULT '',
-        phone TEXT DEFAULT '',
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        paid BOOLEAN NOT NULL DEFAULT FALSE,
-        start_date DATE,
-        end_date DATE,
-        impressions_count INTEGER NOT NULL DEFAULT 0,
-        clicks_count INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS ad_impressions (
-        id UUID PRIMARY KEY,
-        ad_id UUID NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS ad_clicks (
-        id UUID PRIMARY KEY,
-        ad_id UUID NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        token_hash TEXT UNIQUE NOT NULL,
-        refresh_hash TEXT UNIQUE,
-        expires_at TIMESTAMPTZ NOT NULL,
-        refresh_expires_at TIMESTAMPTZ,
-        revoked_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_appointments_date
-      ON appointments(appointment_date)
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_appointments_patient
-      ON appointments(patient_id)
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_appointments_status
-      ON appointments(status)
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_sessions_token
-      ON sessions(token_hash)
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_ads_active
-      ON ads(active)
-    `);
-
-    /*
-      Prevent double booking for appointments that are still active.
-    */
-    await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS appointments_doctor_slot_unique
-      ON appointments(doctor_id, appointment_date, appointment_time)
-      WHERE doctor_id IS NOT NULL
-        AND status IN ('pending', 'confirmed')
-    `);
-
-    await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS appointments_general_slot_unique
-      ON appointments(appointment_date, appointment_time)
-      WHERE doctor_id IS NULL
-        AND status IN ('pending', 'confirmed')
-    `);
-
-    /*
-      Seed initial services only when the table is empty.
-      They can later be edited from the dashboard.
-    */
-    const serviceCount = await client.query(
-      `SELECT COUNT(*)::int AS count FROM services`
+    await client.query(
+      `INSERT INTO staff_users
+        (auth_user_id,full_name,phone,username,role,active)
+       VALUES ($1,$2,'',$3,'admin',TRUE)`,
+      [
+        userResult.rows[0].id,
+        process.env.ADMIN_NAME || "مدير النظام",
+        username
+      ]
     );
 
-    if (serviceCount.rows[0].count === 0) {
-      const initialServices = [
-        ["كشف طبي", "كشف واستشارة طبية", 30],
-        ["استشارة", "استشارة طبية", 30],
-        ["متابعة", "موعد متابعة", 30],
-        ["فحص وتشخيص", "فحص وتشخيص طبي", 45]
-      ];
-
-      for (const [name, description, duration] of initialServices) {
-        await client.query(
-          `
-          INSERT INTO services
-          (id, name, description, duration_minutes)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (name) DO NOTHING
-          `,
-          [
-            crypto.randomUUID(),
-            name,
-            description,
-            duration
-          ]
-        );
-      }
-    }
-
-    /*
-      Optional initial administrator.
-      Set ADMIN_USERNAME and ADMIN_PASSWORD in Render.
-    */
-    if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
-      const adminUsername = normalizeUsername(
-        process.env.ADMIN_USERNAME
-      );
-
-      const existingAdmin = await client.query(
-        `SELECT id FROM users WHERE username = $1 LIMIT 1`,
-        [adminUsername]
-      );
-
-      if (existingAdmin.rowCount === 0) {
-        const password = hashPassword(
-          process.env.ADMIN_PASSWORD
-        );
-
-        const userId = crypto.randomUUID();
-        const staffId = crypto.randomUUID();
-
-        await client.query(
-          `
-          INSERT INTO users
-          (id, username, password_hash, password_salt, role)
-          VALUES ($1, $2, $3, $4, 'admin')
-          `,
-          [
-            userId,
-            adminUsername,
-            password.hash,
-            password.salt
-          ]
-        );
-
-        await client.query(
-          `
-          INSERT INTO staff_users
-          (id, auth_user_id, full_name, username, role)
-          VALUES ($1, $2, $3, $4, 'admin')
-          `,
-          [
-            staffId,
-            userId,
-            process.env.ADMIN_NAME || "مدير النظام",
-            adminUsername
-          ]
-        );
-
-        console.log(
-          `Initial admin account created: ${adminUsername}`
-        );
-      }
-    }
-
     await client.query("COMMIT");
-
-    console.log("Neon database initialized successfully.");
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("Database initialization failed:", error);
-    throw error;
+    console.error("Admin seed error:", error.message);
   } finally {
     client.release();
   }
@@ -461,35 +427,20 @@ async function initDatabase() {
 ========================================================= */
 
 async function createSession(userId) {
-  const token = randomToken(48);
-  const refreshToken = randomToken(48);
+  const token = randomToken();
+  const refreshToken = randomToken();
 
   const tokenHash = hashToken(token);
   const refreshHash = hashToken(refreshToken);
 
   await pool.query(
-    `
-    INSERT INTO sessions
-    (
-      id,
-      user_id,
-      token_hash,
-      refresh_hash,
-      expires_at,
-      refresh_expires_at
-    )
-    VALUES
-    (
-      $1,
-      $2,
-      $3,
-      $4,
-      NOW() + INTERVAL '30 days',
-      NOW() + INTERVAL '90 days'
-    )
-    `,
+    `INSERT INTO sessions
+      (user_id,token_hash,refresh_token_hash,
+       expires_at,refresh_expires_at)
+     VALUES
+      ($1,$2,$3,NOW()+INTERVAL '30 days',
+       NOW()+INTERVAL '90 days')`,
     [
-      crypto.randomUUID(),
       userId,
       tokenHash,
       refreshHash
@@ -502,117 +453,103 @@ async function createSession(userId) {
   };
 }
 
-async function getAuthenticatedUser(token) {
+async function getUserFromToken(token) {
   if (!token) return null;
 
-  const tokenHash = hashToken(token);
-
-  const result = await pool.query(
-    `
-    SELECT
-      u.id,
-      u.username,
-      u.role,
-      u.active,
-      u.email,
-      s.id AS session_id
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = $1
-      AND s.revoked_at IS NULL
-      AND s.expires_at > NOW()
-      AND u.active = TRUE
-    LIMIT 1
-    `,
-    [tokenHash]
-  );
+  const result =
+    await pool.query(`
+      SELECT
+        u.*,
+        s.id AS staff_id,
+        s.full_name AS staff_full_name,
+        s.role AS staff_role,
+        s.active AS staff_active
+      FROM sessions se
+      JOIN users u
+        ON u.id=se.user_id
+      LEFT JOIN staff_users s
+        ON s.auth_user_id=u.id
+      WHERE se.token_hash=$1
+        AND se.expires_at>NOW()
+        AND u.active=TRUE
+      LIMIT 1
+    `, [hashToken(token)]);
 
   return result.rows[0] || null;
 }
 
 async function requireAuth(req, res, next) {
   try {
-    const token = getBearerToken(req);
+    const token =
+      getBearerToken(req);
 
-    if (!token) {
-      return jsonError(
-        res,
-        "Authentication required",
-        401
-      );
-    }
-
-    const user = await getAuthenticatedUser(token);
+    const user =
+      await getUserFromToken(token);
 
     if (!user) {
       return jsonError(
         res,
-        "Invalid or expired session",
+        "يجب تسجيل الدخول أولاً.",
         401
       );
     }
 
-    req.authUser = user;
-    req.authToken = token;
-
+    req.user = user;
     next();
   } catch (error) {
-    console.error("Authentication error:", error);
-    return jsonError(res, "Authentication error", 500);
+    console.error(error);
+    return jsonError(
+      res,
+      "حدث خطأ أثناء التحقق من الحساب.",
+      500
+    );
   }
 }
 
-async function getPatientByAuthUserId(userId) {
-  const result = await pool.query(
-    `
-    SELECT *
-    FROM patients
-    WHERE auth_user_id = $1
-    LIMIT 1
-    `,
-    [userId]
-  );
+async function requirePatient(req, res, next) {
+  await requireAuth(req, res, async () => {
+    if (req.user.role !== "patient") {
+      return jsonError(
+        res,
+        "هذا القسم مخصص للمرضى.",
+        403
+      );
+    }
 
-  return result.rows[0] || null;
-}
-
-async function getStaffByAuthUserId(userId) {
-  const result = await pool.query(
-    `
-    SELECT *
-    FROM staff_users
-    WHERE auth_user_id = $1
-      AND active = TRUE
-    LIMIT 1
-    `,
-    [userId]
-  );
-
-  return result.rows[0] || null;
+    next();
+  });
 }
 
 async function requireStaff(req, res, next) {
-  try {
-    await requireAuth(req, res, async () => {
-      const staff = await getStaffByAuthUserId(
-        req.authUser.id
+  await requireAuth(req, res, async () => {
+    if (
+      !["admin", "doctor", "secretary"].includes(
+        req.user.role
+      )
+    ) {
+      return jsonError(
+        res,
+        "غير مصرح لك.",
+        403
       );
+    }
 
-      if (!staff) {
-        return jsonError(
-          res,
-          "Staff access required",
-          403
-        );
-      }
+    next();
+  });
+}
 
-      req.staff = staff;
-      next();
-    });
-  } catch (error) {
-    console.error("Staff authentication error:", error);
-    return jsonError(res, "Authentication error", 500);
-  }
+async function requireAdmin(req, res, next) {
+  await requireAuth(req, res, async () => {
+    if (req.user.role !== "admin") {
+      return jsonError(
+        res,
+        "صلاحية مدير النظام مطلوبة.",
+        403
+      );
+    }
+
+    next();
+  });
 }
 
 /* =========================================================
@@ -641,263 +578,326 @@ app.get("/api/health", async (req, res) => {
       }
     });
   } catch (error) {
-    console.error(error);
-
     return jsonError(
       res,
-      "Database connection failed",
+      "Database unavailable",
       500
     );
   }
 });
 
-/* =========================================================
-   CONFIG
-========================================================= */
-
 app.get("/api/config", (req, res) => {
   return jsonOk(res, {
-    clinic_name:
-      process.env.APP_NAME ||
-      "منصة الحجز الطبي",
-    specialty:
-      process.env.APP_SPECIALTY ||
-      "منصة لحجز المواعيد والخدمات الطبية"
+    appName: "موعدي",
+    database: "neon"
   });
 });
 
 /* =========================================================
-   PATIENT REGISTRATION
+   PATIENT REGISTER
 ========================================================= */
 
-app.post("/api/patient/register", async (req, res) => {
-  const fullName = String(
-    req.body.full_name || req.body.name || ""
-  ).trim();
+app.post(
+  "/api/patient/register",
+  async (req, res) => {
+    const username =
+      normalizeUsername(req.body.username);
 
-  const phone = String(
-    req.body.phone || ""
-  ).trim();
+    const fullName =
+      String(req.body.full_name || "").trim();
 
-  const username = normalizeUsername(
-    req.body.username
-  );
+    const phone =
+      String(req.body.phone || "").trim();
 
-  const password = String(
-    req.body.password || ""
-  );
+    const email =
+      req.body.email
+        ? String(req.body.email).trim()
+        : null;
 
-  const email = String(
-    req.body.email || ""
-  ).trim() || null;
+    const password =
+      String(req.body.password || "");
 
-  if (fullName.length < 2) {
-    return jsonError(
-      res,
-      "الاسم الكامل مطلوب"
-    );
-  }
-
-  if (phone.length < 5) {
-    return jsonError(
-      res,
-      "رقم الهاتف مطلوب"
-    );
-  }
-
-  if (username.length < 3) {
-    return jsonError(
-      res,
-      "اسم المستخدم يجب أن يكون 3 أحرف على الأقل"
-    );
-  }
-
-  if (password.length < 6) {
-    return jsonError(
-      res,
-      "كلمة المرور يجب أن تكون 6 أحرف على الأقل"
-    );
-  }
-
-  try {
-    const existing = await pool.query(
-      `SELECT id FROM users WHERE username = $1 LIMIT 1`,
-      [username]
-    );
-
-    if (existing.rowCount > 0) {
+    if (username.length < 3) {
       return jsonError(
         res,
-        "اسم المستخدم مستخدم بالفعل"
+        "اسم المستخدم يجب أن يكون 3 أحرف على الأقل."
       );
     }
 
-    const passwordData = hashPassword(password);
-    const userId = crypto.randomUUID();
-    const patientId = crypto.randomUUID();
+    if (fullName.length < 2) {
+      return jsonError(
+        res,
+        "يرجى إدخال الاسم الكامل."
+      );
+    }
 
-    const client = await pool.connect();
+    if (!phone) {
+      return jsonError(
+        res,
+        "يرجى إدخال رقم الهاتف."
+      );
+    }
+
+    if (password.length < 6) {
+      return jsonError(
+        res,
+        "كلمة المرور يجب أن تكون 6 أحرف على الأقل."
+      );
+    }
+
+    const existing =
+      await pool.query(
+        `SELECT id FROM users WHERE username=$1`,
+        [username]
+      );
+
+    if (existing.rowCount) {
+      return jsonError(
+        res,
+        "اسم المستخدم مستخدم بالفعل."
+      );
+    }
+
+    const { salt, hash } =
+      hashPassword(password);
+
+    const client =
+      await pool.connect();
 
     try {
       await client.query("BEGIN");
 
-      await client.query(
-        `
-        INSERT INTO users
-        (
-          id,
-          username,
-          password_hash,
-          password_salt,
-          role,
-          email
-        )
-        VALUES ($1, $2, $3, $4, 'patient', $5)
-        `,
-        [
-          userId,
-          username,
-          passwordData.hash,
-          passwordData.salt,
-          email
-        ]
-      );
+      const userResult =
+        await client.query(
+          `INSERT INTO users
+            (username,password_hash,password_salt,
+             role,active,email)
+           VALUES ($1,$2,$3,'patient',TRUE,$4)
+           RETURNING *`,
+          [
+            username,
+            hash,
+            salt,
+            email
+          ]
+        );
 
-      await client.query(
-        `
-        INSERT INTO patients
-        (
-          id,
-          auth_user_id,
-          full_name,
-          phone,
-          username,
-          email
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        `,
-        [
-          patientId,
-          userId,
-          fullName,
-          phone,
-          username,
-          email
-        ]
-      );
+      const user =
+        userResult.rows[0];
+
+      const patientResult =
+        await client.query(
+          `INSERT INTO patients
+            (auth_user_id,full_name,phone,
+             username,email)
+           VALUES ($1,$2,$3,$4,$5)
+           RETURNING *`,
+          [
+            user.id,
+            fullName,
+            phone,
+            username,
+            email
+          ]
+        );
+
+      const session =
+        await createSessionWithClient(
+          client,
+          user.id
+        );
 
       await client.query("COMMIT");
+
+      return jsonOk(res, {
+        token: session.token,
+        refreshToken: session.refreshToken,
+        user: {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          email: user.email
+        },
+        patient:
+          mapPatient(patientResult.rows[0])
+      });
     } catch (error) {
       await client.query("ROLLBACK");
-      throw error;
+
+      if (error.code === "23505") {
+        return jsonError(
+          res,
+          "اسم المستخدم مستخدم بالفعل."
+        );
+      }
+
+      console.error(error);
+      return jsonError(
+        res,
+        "تعذر إنشاء الحساب.",
+        500
+      );
     } finally {
       client.release();
     }
-
-    const session = await createSession(userId);
-
-    return jsonOk(
-      res,
-      {
-        user: {
-          id: userId,
-          username,
-          role: "patient"
-        },
-        patient: {
-          id: patientId,
-          full_name: fullName,
-          phone,
-          username,
-          email
-        },
-        ...session
-      },
-      201
-    );
-  } catch (error) {
-    console.error("Patient registration error:", error);
-
-    return jsonError(
-      res,
-      "تعذر إنشاء الحساب",
-      500
-    );
   }
-});
+);
+
+async function createSessionWithClient(
+  client,
+  userId
+) {
+  const token = randomToken();
+  const refreshToken = randomToken();
+
+  await client.query(
+    `INSERT INTO sessions
+      (user_id,token_hash,refresh_token_hash,
+       expires_at,refresh_expires_at)
+     VALUES
+      ($1,$2,$3,NOW()+INTERVAL '30 days',
+       NOW()+INTERVAL '90 days')`,
+    [
+      userId,
+      hashToken(token),
+      hashToken(refreshToken)
+    ]
+  );
+
+  return {
+    token,
+    refreshToken
+  };
+}
 
 /* =========================================================
    PATIENT LOGIN
 ========================================================= */
 
-app.post("/api/patient/login", async (req, res) => {
-  const username = normalizeUsername(
-    req.body.username
-  );
+app.post(
+  "/api/patient/login",
+  async (req, res) => {
+    const username =
+      normalizeUsername(req.body.username);
 
-  const password = String(
-    req.body.password || ""
-  );
+    const password =
+      String(req.body.password || "");
 
-  if (!username || !password) {
-    return jsonError(
-      res,
-      "اسم المستخدم وكلمة المرور مطلوبان"
-    );
-  }
-
-  try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM users
-      WHERE username = $1
-        AND active = TRUE
-      LIMIT 1
-      `,
-      [username]
-    );
-
-    const user = result.rows[0];
-
-    if (!user) {
-      return jsonError(
-        res,
-        "بيانات الدخول غير صحيحة",
-        401
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM users
+         WHERE username=$1
+           AND role='patient'
+         LIMIT 1`,
+        [username]
       );
-    }
+
+    const user =
+      result.rows[0];
 
     if (
+      !user ||
       !verifyPassword(
         password,
-        user.password_hash,
-        user.password_salt
+        user.password_salt,
+        user.password_hash
       )
     ) {
       return jsonError(
         res,
-        "بيانات الدخول غير صحيحة",
+        "اسم المستخدم أو كلمة المرور غير صحيحة.",
         401
       );
     }
 
-    if (user.role !== "patient") {
+    const patientResult =
+      await pool.query(
+        `SELECT *
+         FROM patients
+         WHERE auth_user_id=$1
+         LIMIT 1`,
+        [user.id]
+      );
+
+    const session =
+      await createSession(user.id);
+
+    return jsonOk(res, {
+      token: session.token,
+      refreshToken: session.refreshToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        email: user.email
+      },
+      patient:
+        mapPatient(patientResult.rows[0])
+    });
+  }
+);
+
+/* =========================================================
+   STAFF LOGIN
+========================================================= */
+
+app.post(
+  "/api/staff/login",
+  async (req, res) => {
+    const username =
+      normalizeUsername(req.body.username);
+
+    const password =
+      String(req.body.password || "");
+
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM users
+         WHERE username=$1
+           AND role IN ('admin','doctor','secretary')
+           AND active=TRUE
+         LIMIT 1`,
+        [username]
+      );
+
+    const user =
+      result.rows[0];
+
+    if (
+      !user ||
+      !verifyPassword(
+        password,
+        user.password_salt,
+        user.password_hash
+      )
+    ) {
       return jsonError(
         res,
-        "هذا الحساب ليس حساب مريض",
-        403
+        "بيانات الدخول غير صحيحة.",
+        401
       );
     }
 
-    const patient =
-      await getPatientByAuthUserId(user.id);
+    const staffResult =
+      await pool.query(
+        `SELECT *
+         FROM staff_users
+         WHERE auth_user_id=$1
+           AND active=TRUE
+         LIMIT 1`,
+        [user.id]
+      );
 
-    if (!patient) {
+    const staff =
+      staffResult.rows[0];
+
+    if (!staff) {
       return jsonError(
         res,
-        "حساب المريض غير مكتمل",
-        500
+        "حساب الموظف غير مكتمل.",
+        403
       );
     }
 
@@ -905,228 +905,164 @@ app.post("/api/patient/login", async (req, res) => {
       await createSession(user.id);
 
     return jsonOk(res, {
+      token: session.token,
+      refreshToken: session.refreshToken,
       user: {
         id: user.id,
         username: user.username,
-        role: user.role
+        role: user.role,
+        email: user.email
       },
-      patient: mapPatient(patient),
-      ...session
+      staff: {
+        ...mapDoctor({
+          ...staff,
+          email: user.email
+        })
+      }
     });
-  } catch (error) {
-    console.error("Patient login error:", error);
-
-    return jsonError(
-      res,
-      "تعذر تسجيل الدخول",
-      500
-    );
   }
-});
+);
 
-/* =========================================================
-   STAFF LOGIN
-========================================================= */
-
-app.post("/api/staff/login", async (req, res) => {
-  const username = normalizeUsername(
-    req.body.username
-  );
-
-  const password = String(
-    req.body.password || ""
-  );
-
-  if (!username || !password) {
-    return jsonError(
-      res,
-      "اسم المستخدم وكلمة المرور مطلوبان"
-    );
+app.post(
+  "/api/admin/login",
+  async (req, res) => {
+    req.url = "/api/staff/login";
+    return app._router.handle(req, res);
   }
+);
 
-  try {
-    const result = await pool.query(
-      `
-      SELECT
-        u.*,
-        s.id AS staff_id,
-        s.full_name AS staff_name,
-        s.phone AS staff_phone,
-        s.role AS staff_role,
-        s.active AS staff_active
-      FROM users u
-      JOIN staff_users s
-        ON s.auth_user_id = u.id
-      WHERE u.username = $1
-        AND u.active = TRUE
-        AND s.active = TRUE
-      LIMIT 1
-      `,
-      [username]
-    );
+app.post(
+  "/api/login",
+  async (req, res) => {
+    const username =
+      normalizeUsername(req.body.username);
 
-    const row = result.rows[0];
+    const password =
+      String(req.body.password || "");
 
-    if (!row) {
-      return jsonError(
-        res,
-        "بيانات الدخول غير صحيحة",
-        401
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM users
+         WHERE username=$1
+         LIMIT 1`,
+        [username]
       );
-    }
+
+    const user =
+      result.rows[0];
 
     if (
+      !user ||
       !verifyPassword(
         password,
-        row.password_hash,
-        row.password_salt
+        user.password_salt,
+        user.password_hash
       )
     ) {
       return jsonError(
         res,
-        "بيانات الدخول غير صحيحة",
+        "بيانات الدخول غير صحيحة.",
         401
       );
     }
 
     const session =
-      await createSession(row.id);
+      await createSession(user.id);
 
     return jsonOk(res, {
+      token: session.token,
+      refreshToken: session.refreshToken,
       user: {
-        id: row.id,
-        username: row.username,
-        role: row.role
-      },
-      staff: {
-        id: row.staff_id,
-        full_name: row.staff_name,
-        phone: row.staff_phone,
-        role: row.staff_role
-      },
-      ...session
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        email: user.email
+      }
     });
-  } catch (error) {
-    console.error("Staff login error:", error);
-
-    return jsonError(
-      res,
-      "تعذر تسجيل الدخول",
-      500
-    );
   }
-});
-
-/* Aliases */
-app.post("/api/admin/login", (req, res) => {
-  req.url = "/api/staff/login";
-  app.handle(req, res);
-});
-
-app.post("/api/login", (req, res) => {
-  req.url = "/api/staff/login";
-  app.handle(req, res);
-});
+);
 
 /* =========================================================
-   REFRESH SESSION
+   REFRESH
 ========================================================= */
 
-app.post("/api/refresh", async (req, res) => {
-  const refreshToken = String(
-    req.body.refreshToken ||
-    req.body.refresh_token ||
-    ""
-  ).trim();
+app.post(
+  "/api/refresh",
+  async (req, res) => {
+    const refreshToken =
+      String(
+        req.body.refreshToken || ""
+      ).trim();
 
-  if (!refreshToken) {
-    return jsonError(
-      res,
-      "Refresh token required",
-      401
-    );
-  }
-
-  try {
-    const refreshHash =
-      hashToken(refreshToken);
-
-    const result = await pool.query(
-      `
-      SELECT user_id
-      FROM sessions
-      WHERE refresh_hash = $1
-        AND revoked_at IS NULL
-        AND refresh_expires_at > NOW()
-      LIMIT 1
-      `,
-      [refreshHash]
-    );
-
-    if (result.rowCount === 0) {
+    if (!refreshToken) {
       return jsonError(
         res,
-        "Invalid refresh token",
+        "Refresh token مطلوب.",
+        401
+      );
+    }
+
+    const result =
+      await pool.query(
+        `SELECT u.*
+         FROM sessions s
+         JOIN users u ON u.id=s.user_id
+         WHERE s.refresh_token_hash=$1
+           AND s.refresh_expires_at>NOW()
+           AND u.active=TRUE
+         LIMIT 1`,
+        [hashToken(refreshToken)]
+      );
+
+    const user =
+      result.rows[0];
+
+    if (!user) {
+      return jsonError(
+        res,
+        "جلسة الدخول منتهية.",
         401
       );
     }
 
     const session =
-      await createSession(
-        result.rows[0].user_id
-      );
+      await createSession(user.id);
 
-    return jsonOk(res, session);
-  } catch (error) {
-    console.error(error);
-
-    return jsonError(
-      res,
-      "Unable to refresh session",
-      500
-    );
+    return jsonOk(res, {
+      token: session.token,
+      refreshToken: session.refreshToken
+    });
   }
-});
+);
 
 /* =========================================================
-   PATIENT SESSION
+   PATIENT ME
 ========================================================= */
 
 app.get(
   "/api/patient/me",
-  requireAuth,
+  requirePatient,
   async (req, res) => {
-    try {
-      const patient =
-        await getPatientByAuthUserId(
-          req.authUser.id
-        );
-
-      if (!patient) {
-        return jsonError(
-          res,
-          "Patient not found",
-          404
-        );
-      }
-
-      return jsonOk(res, {
-        user: {
-          id: req.authUser.id,
-          username: req.authUser.username,
-          role: req.authUser.role
-        },
-        patient: mapPatient(patient)
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load patient",
-        500
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM patients
+         WHERE auth_user_id=$1
+         LIMIT 1`,
+        [req.user.id]
       );
-    }
+
+    return jsonOk(res, {
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        email: req.user.email
+      },
+      patient:
+        mapPatient(result.rows[0])
+    });
   }
 );
 
@@ -1138,59 +1074,152 @@ app.post(
   "/api/logout",
   requireAuth,
   async (req, res) => {
-    try {
-      await pool.query(
-        `
-        UPDATE sessions
-        SET revoked_at = NOW()
-        WHERE token_hash = $1
-        `,
-        [hashToken(req.authToken)]
-      );
+    const token =
+      getBearerToken(req);
 
-      return jsonOk(res, {
-        message: "Logged out successfully"
-      });
-    } catch (error) {
-      console.error(error);
+    await pool.query(
+      `DELETE FROM sessions
+       WHERE token_hash=$1`,
+      [hashToken(token)]
+    );
 
-      return jsonError(
-        res,
-        "Unable to logout",
-        500
-      );
-    }
+    return jsonOk(res);
   }
 );
 
 /* =========================================================
-   SERVICES - PUBLIC
+   SERVICES PUBLIC
 ========================================================= */
 
-app.get("/api/services", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM services
-      WHERE active = TRUE
-      ORDER BY created_at ASC
-      `
-    );
+app.get(
+  "/api/services",
+  async (req, res) => {
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM services
+         WHERE active=TRUE
+         ORDER BY created_at ASC`
+      );
 
     return jsonOk(res, {
-      services: result.rows.map(mapService)
+      services:
+        result.rows.map(mapService)
     });
-  } catch (error) {
-    console.error(error);
-
-    return jsonError(
-      res,
-      "Unable to load services",
-      500
-    );
   }
-});
+);
+
+/* =========================================================
+   DOCTORS PUBLIC
+========================================================= */
+
+app.get(
+  "/api/doctors",
+  async (req, res) => {
+    const search =
+      String(req.query.search || "")
+        .trim()
+        .toLowerCase();
+
+    const specialty =
+      String(req.query.specialty || "")
+        .trim();
+
+    const area =
+      String(req.query.area || "")
+        .trim();
+
+    const params = [];
+    const conditions = [
+      `s.role='doctor'`,
+      `s.active=TRUE`,
+      `s.available=TRUE`
+    ];
+
+    if (search) {
+      params.push(`%${search}%`);
+
+      conditions.push(`
+        (
+          LOWER(s.full_name) LIKE $${params.length}
+          OR LOWER(COALESCE(s.specialty,'')) LIKE $${params.length}
+          OR LOWER(COALESCE(s.area,'')) LIKE $${params.length}
+        )
+      `);
+    }
+
+    if (specialty) {
+      params.push(specialty);
+
+      conditions.push(
+        `s.specialty=$${params.length}`
+      );
+    }
+
+    if (area) {
+      params.push(area);
+
+      conditions.push(
+        `s.area=$${params.length}`
+      );
+    }
+
+    const result =
+      await pool.query(
+        `
+        SELECT
+          s.*,
+          u.email
+        FROM staff_users s
+        LEFT JOIN users u
+          ON u.id=s.auth_user_id
+        WHERE ${conditions.join(" AND ")}
+        ORDER BY s.created_at ASC
+        `,
+        params
+      );
+
+    return jsonOk(res, {
+      doctors:
+        result.rows.map(mapDoctor)
+    });
+  }
+);
+
+app.get(
+  "/api/doctors/:id",
+  async (req, res) => {
+    const result =
+      await pool.query(
+        `
+        SELECT
+          s.*,
+          u.email
+        FROM staff_users s
+        LEFT JOIN users u
+          ON u.id=s.auth_user_id
+        WHERE s.id=$1
+          AND s.role='doctor'
+          AND s.active=TRUE
+        LIMIT 1
+        `,
+        [req.params.id]
+      );
+
+    if (!result.rowCount) {
+      return jsonError(
+        res,
+        "الطبيب غير موجود.",
+        404
+      );
+    }
+
+    return jsonOk(res, {
+      doctor:
+        mapDoctor(result.rows[0])
+    });
+  }
+);
 
 /* =========================================================
    CREATE APPOINTMENT
@@ -1198,231 +1227,190 @@ app.get("/api/services", async (req, res) => {
 
 app.post(
   "/api/appointments",
-  requireAuth,
+  requirePatient,
   async (req, res) => {
-    try {
-      if (req.authUser.role !== "patient") {
-        return jsonError(
-          res,
-          "Only patients can create appointments",
-          403
+    const serviceId =
+      req.body.service_id || null;
+
+    const doctorId =
+      req.body.doctor_id || null;
+
+    const appointmentDate =
+      String(
+        req.body.appointment_date || ""
+      );
+
+    const appointmentTime =
+      String(
+        req.body.appointment_time || ""
+      );
+
+    const notes =
+      String(req.body.notes || "").trim();
+
+    if (!validDate(appointmentDate)) {
+      return jsonError(
+        res,
+        "تاريخ الموعد غير صحيح."
+      );
+    }
+
+    if (!validTime(appointmentTime)) {
+      return jsonError(
+        res,
+        "وقت الموعد غير صحيح."
+      );
+    }
+
+    const patientResult =
+      await pool.query(
+        `SELECT id
+         FROM patients
+         WHERE auth_user_id=$1
+         LIMIT 1`,
+        [req.user.id]
+      );
+
+    if (!patientResult.rowCount) {
+      return jsonError(
+        res,
+        "بيانات المريض غير موجودة.",
+        404
+      );
+    }
+
+    const patientId =
+      patientResult.rows[0].id;
+
+    let service = null;
+
+    if (serviceId) {
+      const serviceResult =
+        await pool.query(
+          `SELECT *
+           FROM services
+           WHERE id=$1
+             AND active=TRUE
+           LIMIT 1`,
+          [serviceId]
         );
-      }
 
-      const patient =
-        await getPatientByAuthUserId(
-          req.authUser.id
-        );
-
-      if (!patient) {
-        return jsonError(
-          res,
-          "Patient profile not found",
-          404
-        );
-      }
-
-      const input =
-        normalizeAppointmentInput(req.body);
-
-      if (
-        !validDate(input.appointment_date)
-      ) {
-        return jsonError(
-          res,
-          "تاريخ الموعد غير صحيح"
-        );
-      }
-
-      if (
-        !validTime(input.appointment_time)
-      ) {
-        return jsonError(
-          res,
-          "وقت الموعد غير صحيح"
-        );
-      }
-
-      let service = null;
-
-      if (input.service_id) {
-        const serviceResult =
-          await pool.query(
-            `
-            SELECT *
-            FROM services
-            WHERE id = $1
-              AND active = TRUE
-            LIMIT 1
-            `,
-            [input.service_id]
-          );
-
-        service =
-          serviceResult.rows[0] || null;
-      }
-
-      if (!service && input.service) {
-        const serviceResult =
-          await pool.query(
-            `
-            SELECT *
-            FROM services
-            WHERE LOWER(name) =
-                  LOWER($1)
-              AND active = TRUE
-            LIMIT 1
-            `,
-            [input.service]
-          );
-
-        service =
-          serviceResult.rows[0] || null;
-      }
+      service =
+        serviceResult.rows[0];
 
       if (!service) {
         return jsonError(
           res,
-          "الخدمة المطلوبة غير موجودة"
+          "الخدمة الطبية غير موجودة."
         );
       }
+    }
 
-      let doctor = null;
+    if (doctorId) {
+      const doctorResult =
+        await pool.query(
+          `SELECT *
+           FROM staff_users
+           WHERE id=$1
+             AND role='doctor'
+             AND active=TRUE
+             AND available=TRUE
+           LIMIT 1`,
+          [doctorId]
+        );
 
-      if (input.doctor_id) {
-        const doctorResult =
-          await pool.query(
-            `
-            SELECT *
-            FROM staff_users
-            WHERE id = $1
-              AND active = TRUE
-            LIMIT 1
-            `,
-            [input.doctor_id]
-          );
-
-        doctor =
-          doctorResult.rows[0] || null;
-
-        if (!doctor) {
-          return jsonError(
-            res,
-            "الطبيب غير موجود"
-          );
-        }
-      }
-
-      /*
-        Check for an existing active appointment
-        at the requested slot.
-      */
-      let duplicate;
-
-      if (doctor) {
-        duplicate =
-          await pool.query(
-            `
-            SELECT id
-            FROM appointments
-            WHERE doctor_id = $1
-              AND appointment_date = $2
-              AND appointment_time = $3
-              AND status IN ('pending', 'confirmed')
-            LIMIT 1
-            `,
-            [
-              doctor.id,
-              input.appointment_date,
-              input.appointment_time
-            ]
-          );
-      } else {
-        duplicate =
-          await pool.query(
-            `
-            SELECT id
-            FROM appointments
-            WHERE doctor_id IS NULL
-              AND appointment_date = $1
-              AND appointment_time = $2
-              AND status IN ('pending', 'confirmed')
-            LIMIT 1
-            `,
-            [
-              input.appointment_date,
-              input.appointment_time
-            ]
-          );
-      }
-
-      if (duplicate.rowCount > 0) {
+      if (!doctorResult.rowCount) {
         return jsonError(
           res,
-          "هذا الموعد محجوز بالفعل"
+          "الطبيب غير متاح حالياً."
         );
       }
 
-      const appointmentId =
-        crypto.randomUUID();
-
-      const result =
+      const conflict =
         await pool.query(
-          `
-          INSERT INTO appointments
-          (
-            id,
-            patient_id,
-            doctor_id,
-            service_id,
-            appointment_date,
-            appointment_time,
-            status,
-            notes
-          )
-          VALUES
-          ($1, $2, $3, $4, $5, $6, 'pending', $7)
-          RETURNING *
-          `,
+          `SELECT id
+           FROM appointments
+           WHERE doctor_id=$1
+             AND appointment_date=$2
+             AND appointment_time=$3
+             AND status IN ('pending','confirmed')
+           LIMIT 1`,
           [
-            appointmentId,
-            patient.id,
-            doctor ? doctor.id : null,
-            service.id,
-            input.appointment_date,
-            input.appointment_time,
-            input.notes
+            doctorId,
+            appointmentDate,
+            appointmentTime
           ]
         );
 
-      return jsonOk(
-        res,
-        {
-          appointment: result.rows[0],
-          message:
-            "تم إرسال طلب الحجز بنجاح"
-        },
-        201
-      );
+      if (conflict.rowCount) {
+        return jsonError(
+          res,
+          "هذا الموعد محجوز مسبقاً للطبيب. اختر وقتاً آخر."
+        );
+      }
+    } else {
+      const conflict =
+        await pool.query(
+          `SELECT id
+           FROM appointments
+           WHERE doctor_id IS NULL
+             AND appointment_date=$1
+             AND appointment_time=$2
+             AND status IN ('pending','confirmed')
+           LIMIT 1`,
+          [
+            appointmentDate,
+            appointmentTime
+          ]
+        );
+
+      if (conflict.rowCount) {
+        return jsonError(
+          res,
+          "هذا الموعد محجوز مسبقاً. اختر وقتاً آخر."
+        );
+      }
+    }
+
+    try {
+      const result =
+        await pool.query(
+          `INSERT INTO appointments
+            (patient_id,doctor_id,service_id,
+             appointment_date,appointment_time,
+             status,notes,confirmed,cancelled)
+           VALUES
+            ($1,$2,$3,$4,$5,'pending',$6,FALSE,FALSE)
+           RETURNING *`,
+          [
+            patientId,
+            doctorId,
+            service
+              ? service.id
+              : null,
+            appointmentDate,
+            appointmentTime,
+            notes
+          ]
+        );
+
+      return jsonOk(res, {
+        appointment:
+          mapAppointment(result.rows[0])
+      });
     } catch (error) {
-      /*
-        Handles PostgreSQL unique-index race conditions.
-      */
       if (error.code === "23505") {
         return jsonError(
           res,
-          "هذا الموعد تم حجزه بالفعل"
+          "هذا الموعد محجوز مسبقاً. اختر وقتاً آخر."
         );
       }
 
-      console.error(
-        "Appointment creation error:",
-        error
-      );
+      console.error(error);
 
       return jsonError(
         res,
-        "تعذر إنشاء الموعد",
+        "تعذر إنشاء الموعد.",
         500
       );
     }
@@ -1435,205 +1423,175 @@ app.post(
 
 app.get(
   "/api/my-appointments",
-  requireAuth,
+  requirePatient,
   async (req, res) => {
-    try {
-      const patient =
-        await getPatientByAuthUserId(
-          req.authUser.id
-        );
+    const patientResult =
+      await pool.query(
+        `SELECT id
+         FROM patients
+         WHERE auth_user_id=$1
+         LIMIT 1`,
+        [req.user.id]
+      );
 
-      if (!patient) {
-        return jsonError(
-          res,
-          "Patient not found",
-          404
-        );
-      }
+    if (!patientResult.rowCount) {
+      return jsonOk(res, {
+        appointments: []
+      });
+    }
 
-      const result = await pool.query(
+    const result =
+      await pool.query(
         `
         SELECT
           a.*,
-          p.full_name AS patient_name,
-          p.phone AS patient_phone,
-          s.name AS service_name,
-          d.full_name AS doctor_name
+          d.full_name AS doctor_name,
+          s.name AS service_name
         FROM appointments a
-        JOIN patients p
-          ON p.id = a.patient_id
-        LEFT JOIN services s
-          ON s.id = a.service_id
         LEFT JOIN staff_users d
-          ON d.id = a.doctor_id
-        WHERE a.patient_id = $1
+          ON d.id=a.doctor_id
+        LEFT JOIN services s
+          ON s.id=a.service_id
+        WHERE a.patient_id=$1
         ORDER BY
           a.appointment_date DESC,
           a.appointment_time DESC
         `,
-        [patient.id]
+        [patientResult.rows[0].id]
       );
 
-      return jsonOk(res, {
-        appointments:
-          result.rows.map(mapAppointment)
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load appointments",
-        500
-      );
-    }
+    return jsonOk(res, {
+      appointments:
+        result.rows.map(mapAppointment)
+    });
   }
 );
 
 app.get(
   "/api/patient/appointments",
-  (req, res) => {
-    req.url = "/api/my-appointments";
-    app.handle(req, res);
+  requirePatient,
+  async (req, res) => {
+    const patientResult =
+      await pool.query(
+        `SELECT id
+         FROM patients
+         WHERE auth_user_id=$1
+         LIMIT 1`,
+        [req.user.id]
+      );
+
+    const result =
+      await pool.query(
+        `
+        SELECT
+          a.*,
+          d.full_name AS doctor_name,
+          s.name AS service_name
+        FROM appointments a
+        LEFT JOIN staff_users d
+          ON d.id=a.doctor_id
+        LEFT JOIN services s
+          ON s.id=a.service_id
+        WHERE a.patient_id=$1
+        ORDER BY a.appointment_date DESC
+        `,
+        [
+          patientResult.rows[0]?.id || null
+        ]
+      );
+
+    return jsonOk(res, {
+      appointments:
+        result.rows.map(mapAppointment)
+    });
   }
 );
 
 /* =========================================================
-   ADS - PUBLIC
+   ADS PUBLIC
 ========================================================= */
 
-app.get("/api/ads", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM ads
-      WHERE active = TRUE
-        AND paid = TRUE
-        AND (
-          start_date IS NULL
-          OR start_date <= CURRENT_DATE
-        )
-        AND (
-          end_date IS NULL
-          OR end_date >= CURRENT_DATE
-        )
-      ORDER BY created_at DESC
-      `
-    );
+app.get(
+  "/api/ads",
+  async (req, res) => {
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM ads
+         WHERE active=TRUE
+         ORDER BY created_at DESC`
+      );
 
     return jsonOk(res, {
       ads: result.rows
     });
-  } catch (error) {
-    console.error(error);
-
-    return jsonError(
-      res,
-      "Unable to load ads",
-      500
-    );
   }
-});
+);
 
 app.post(
   "/api/ads/:id/impression",
   async (req, res) => {
-    try {
-      const adId = req.params.id;
+    await pool.query(
+      `INSERT INTO ad_impressions(ad_id)
+       SELECT id
+       FROM ads
+       WHERE id=$1
+         AND active=TRUE`,
+      [req.params.id]
+    );
 
-      await pool.query(
-        `
-        INSERT INTO ad_impressions
-        (id, ad_id)
-        VALUES ($1, $2)
-        `,
-        [
-          crypto.randomUUID(),
-          adId
-        ]
-      );
-
-      await pool.query(
-        `
-        UPDATE ads
-        SET impressions_count =
-            impressions_count + 1
-        WHERE id = $1
-        `,
-        [adId]
-      );
-
-      return jsonOk(res);
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to record impression",
-        500
-      );
-    }
+    return jsonOk(res);
   }
 );
 
 app.post(
   "/api/ads/:id/click",
   async (req, res) => {
-    try {
-      const adId = req.params.id;
+    await pool.query(
+      `INSERT INTO ad_clicks(ad_id)
+       SELECT id
+       FROM ads
+       WHERE id=$1
+         AND active=TRUE`,
+      [req.params.id]
+    );
 
-      await pool.query(
-        `
-        INSERT INTO ad_clicks
-        (id, ad_id)
-        VALUES ($1, $2)
-        `,
-        [
-          crypto.randomUUID(),
-          adId
-        ]
-      );
-
-      await pool.query(
-        `
-        UPDATE ads
-        SET clicks_count =
-            clicks_count + 1
-        WHERE id = $1
-        `,
-        [adId]
-      );
-
-      return jsonOk(res);
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to record click",
-        500
-      );
-    }
+    return jsonOk(res);
   }
 );
 
 /* =========================================================
-   STAFF PROFILE
+   STAFF ME
 ========================================================= */
 
 app.get(
   "/api/staff/me",
   requireStaff,
   async (req, res) => {
+    const result =
+      await pool.query(
+        `
+        SELECT
+          s.*,
+          u.email
+        FROM staff_users s
+        LEFT JOIN users u
+          ON u.id=s.auth_user_id
+        WHERE s.auth_user_id=$1
+        LIMIT 1
+        `,
+        [req.user.id]
+      );
+
     return jsonOk(res, {
-      staff: {
-        id: req.staff.id,
-        full_name: req.staff.full_name,
-        phone: req.staff.phone,
-        username: req.staff.username,
-        role: req.staff.role
-      }
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        email: req.user.email
+      },
+      staff:
+        mapDoctor(result.rows[0])
     });
   }
 );
@@ -1646,83 +1604,39 @@ app.get(
   "/api/dashboard/stats",
   requireStaff,
   async (req, res) => {
-    try {
-      const total =
-        await pool.query(
-          `SELECT COUNT(*)::int AS count FROM appointments`
-        );
+    const result =
+      await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM patients)::int
+            AS patients,
+          (SELECT COUNT(*) FROM appointments)::int
+            AS appointments,
+          (SELECT COUNT(*)
+           FROM appointments
+           WHERE status='pending')::int
+            AS pending,
+          (SELECT COUNT(*)
+           FROM appointments
+           WHERE status='confirmed')::int
+            AS confirmed,
+          (SELECT COUNT(*)
+           FROM staff_users
+           WHERE role='doctor'
+             AND active=TRUE)::int
+            AS doctors,
+          (SELECT COUNT(*)
+           FROM services
+           WHERE active=TRUE)::int
+            AS services,
+          (SELECT COUNT(*)
+           FROM ads
+           WHERE active=TRUE)::int
+            AS ads
+      `);
 
-      const pending =
-        await pool.query(
-          `
-          SELECT COUNT(*)::int AS count
-          FROM appointments
-          WHERE status = 'pending'
-          `
-        );
-
-      const confirmed =
-        await pool.query(
-          `
-          SELECT COUNT(*)::int AS count
-          FROM appointments
-          WHERE status = 'confirmed'
-          `
-        );
-
-      const patients =
-        await pool.query(
-          `SELECT COUNT(*)::int AS count FROM patients`
-        );
-
-      const services =
-        await pool.query(
-          `
-          SELECT COUNT(*)::int AS count
-          FROM services
-          WHERE active = TRUE
-          `
-        );
-
-      const ads =
-        await pool.query(
-          `
-          SELECT COUNT(*)::int AS count
-          FROM ads
-          WHERE active = TRUE
-          `
-        );
-
-      return jsonOk(res, {
-        stats: {
-          total_appointments:
-            total.rows[0].count,
-
-          pending:
-            pending.rows[0].count,
-
-          confirmed:
-            confirmed.rows[0].count,
-
-          patients:
-            patients.rows[0].count,
-
-          services:
-            services.rows[0].count,
-
-          active_ads:
-            ads.rows[0].count
-        }
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load dashboard stats",
-        500
-      );
-    }
+    return jsonOk(res, {
+      stats: result.rows[0]
+    });
   }
 );
 
@@ -1734,80 +1648,57 @@ app.get(
   "/api/dashboard/appointments",
   requireStaff,
   async (req, res) => {
-    try {
-      const search =
-        String(req.query.search || "").trim();
+    const status =
+      String(req.query.status || "")
+        .trim();
 
-      const status =
-        String(req.query.status || "").trim();
+    const params = [];
+    let where = "";
 
-      const params = [];
-      const conditions = [];
+    if (status) {
+      params.push(status);
+      where = `WHERE a.status=$1`;
+    }
 
-      if (status) {
-        params.push(status);
-        conditions.push(
-          `a.status = $${params.length}`
-        );
-      }
-
-      if (search) {
-        params.push(`%${search}%`);
-
-        conditions.push(`
-          (
-            p.full_name ILIKE $${params.length}
-            OR p.phone ILIKE $${params.length}
-          )
-        `);
-      }
-
-      const where =
-        conditions.length > 0
-          ? `WHERE ${conditions.join(" AND ")}`
-          : "";
-
-      const result = await pool.query(
+    const result =
+      await pool.query(
         `
         SELECT
           a.*,
           p.full_name AS patient_name,
           p.phone AS patient_phone,
-          s.name AS service_name,
-          d.full_name AS doctor_name
+          d.full_name AS doctor_name,
+          s.name AS service_name
         FROM appointments a
         JOIN patients p
-          ON p.id = a.patient_id
-        LEFT JOIN services s
-          ON s.id = a.service_id
+          ON p.id=a.patient_id
         LEFT JOIN staff_users d
-          ON d.id = a.doctor_id
+          ON d.id=a.doctor_id
+        LEFT JOIN services s
+          ON s.id=a.service_id
         ${where}
         ORDER BY
-          a.appointment_date ASC,
-          a.appointment_time ASC
+          a.appointment_date DESC,
+          a.appointment_time DESC
         `,
         params
       );
 
-      return jsonOk(res, {
-        appointments:
-          result.rows.map(mapAppointment)
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load dashboard appointments",
-        500
-      );
-    }
+    return jsonOk(res, {
+      appointments:
+        result.rows.map(row => ({
+          ...mapAppointment(row),
+          patient_name:
+            row.patient_name || "",
+          patient_phone:
+            row.patient_phone || ""
+        }))
+    });
   }
 );
 
 /* =========================================================
-   CONFIRM APPOINTMENT
+   CONFIRM / CANCEL
 ========================================================= */
 
 app.patch(
@@ -1815,92 +1706,68 @@ app.patch(
   requireStaff,
   async (req, res) => {
     try {
-      const result = await pool.query(
-        `
-        UPDATE appointments
-        SET
-          status = 'confirmed',
-          confirmed_at = NOW(),
-          confirmed_by = $1,
-          updated_at = NOW()
-        WHERE id = $2
-          AND status = 'pending'
-        RETURNING *
-        `,
-        [
-          req.staff.id,
-          req.params.id
-        ]
-      );
+      const result =
+        await pool.query(
+          `UPDATE appointments
+           SET status='confirmed',
+               confirmed=TRUE,
+               cancelled=FALSE,
+               updated_at=NOW()
+           WHERE id=$1
+           RETURNING *`,
+          [req.params.id]
+        );
 
-      if (result.rowCount === 0) {
+      if (!result.rowCount) {
         return jsonError(
           res,
-          "Appointment not found or already processed",
+          "الموعد غير موجود.",
           404
         );
       }
 
       return jsonOk(res, {
-        appointment: result.rows[0],
-        message: "تم تأكيد الحجز"
+        appointment:
+          mapAppointment(result.rows[0])
       });
     } catch (error) {
-      console.error(error);
-
       return jsonError(
         res,
-        "Unable to confirm appointment",
+        "تعذر تأكيد الموعد.",
         500
       );
     }
   }
 );
 
-/* =========================================================
-   CANCEL APPOINTMENT
-========================================================= */
-
 app.patch(
   "/api/dashboard/appointments/:id/cancel",
   requireStaff,
   async (req, res) => {
-    try {
-      const result = await pool.query(
-        `
-        UPDATE appointments
-        SET
-          status = 'cancelled',
-          cancelled_at = NOW(),
-          updated_at = NOW()
-        WHERE id = $1
-          AND status IN ('pending', 'confirmed')
-        RETURNING *
-        `,
+    const result =
+      await pool.query(
+        `UPDATE appointments
+         SET status='cancelled',
+             confirmed=FALSE,
+             cancelled=TRUE,
+             updated_at=NOW()
+         WHERE id=$1
+         RETURNING *`,
         [req.params.id]
       );
 
-      if (result.rowCount === 0) {
-        return jsonError(
-          res,
-          "Appointment not found or already cancelled",
-          404
-        );
-      }
-
-      return jsonOk(res, {
-        appointment: result.rows[0],
-        message: "تم إلغاء الحجز"
-      });
-    } catch (error) {
-      console.error(error);
-
+    if (!result.rowCount) {
       return jsonError(
         res,
-        "Unable to cancel appointment",
-        500
+        "الموعد غير موجود.",
+        404
       );
     }
+
+    return jsonOk(res, {
+      appointment:
+        mapAppointment(result.rows[0])
+    });
   }
 );
 
@@ -1912,47 +1779,21 @@ app.get(
   "/api/dashboard/patients",
   requireStaff,
   async (req, res) => {
-    try {
-      const search =
-        String(req.query.search || "").trim();
+    const result =
+      await pool.query(`
+        SELECT
+          p.*,
+          COUNT(a.id)::int AS appointments_count
+        FROM patients p
+        LEFT JOIN appointments a
+          ON a.patient_id=p.id
+        GROUP BY p.id
+        ORDER BY p.created_at DESC
+      `);
 
-      let result;
-
-      if (search) {
-        result = await pool.query(
-          `
-          SELECT *
-          FROM patients
-          WHERE full_name ILIKE $1
-             OR phone ILIKE $1
-             OR username ILIKE $1
-          ORDER BY created_at DESC
-          `,
-          [`%${search}%`]
-        );
-      } else {
-        result = await pool.query(
-          `
-          SELECT *
-          FROM patients
-          ORDER BY created_at DESC
-          `
-        );
-      }
-
-      return jsonOk(res, {
-        patients:
-          result.rows.map(mapPatient)
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load patients",
-        500
-      );
-    }
+    return jsonOk(res, {
+      patients: result.rows
+    });
   }
 );
 
@@ -1964,35 +1805,24 @@ app.get(
   "/api/dashboard/patients/:patientId/medical-records",
   requireStaff,
   async (req, res) => {
-    try {
-      const result = await pool.query(
+    const result =
+      await pool.query(
         `
         SELECT
           m.*,
           d.full_name AS doctor_name
         FROM medical_records m
         LEFT JOIN staff_users d
-          ON d.id = m.doctor_id
-        WHERE m.patient_id = $1
-        ORDER BY
-          m.record_date DESC,
-          m.created_at DESC
+          ON d.id=m.doctor_id
+        WHERE m.patient_id=$1
+        ORDER BY m.created_at DESC
         `,
         [req.params.patientId]
       );
 
-      return jsonOk(res, {
-        records: result.rows
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load medical records",
-        500
-      );
-    }
+    return jsonOk(res, {
+      records: result.rows
+    });
   }
 );
 
@@ -2000,121 +1830,58 @@ app.post(
   "/api/dashboard/patients/:patientId/medical-records",
   requireStaff,
   async (req, res) => {
-    try {
-      const patientCheck =
-        await pool.query(
-          `
-          SELECT id
-          FROM patients
-          WHERE id = $1
-          LIMIT 1
-          `,
-          [req.params.patientId]
-        );
+    const diagnosis =
+      String(req.body.diagnosis || "");
 
-      if (patientCheck.rowCount === 0) {
-        return jsonError(
-          res,
-          "Patient not found",
-          404
-        );
-      }
+    const notes =
+      String(req.body.notes || "");
 
-      const record = {
-        diagnosis:
-          req.body.diagnosis || "",
+    const prescription =
+      String(req.body.prescription || "");
 
-        treatment:
-          req.body.treatment || "",
-
-        notes:
-          req.body.notes || "",
-
-        record_date:
-          validDate(req.body.record_date)
-            ? req.body.record_date
-            : new Date()
-                .toISOString()
-                .slice(0, 10)
-      };
-
-      const result = await pool.query(
+    const result =
+      await pool.query(
         `
         INSERT INTO medical_records
-        (
-          id,
-          patient_id,
-          doctor_id,
-          diagnosis,
-          treatment,
-          notes,
-          record_date
-        )
-        VALUES
-        ($1, $2, $3, $4, $5, $6, $7)
+          (patient_id,doctor_id,
+           diagnosis,notes,prescription)
+        VALUES ($1,$2,$3,$4,$5)
         RETURNING *
         `,
         [
-          crypto.randomUUID(),
           req.params.patientId,
-          req.staff.id,
-          record.diagnosis,
-          record.treatment,
-          record.notes,
-          record.record_date
+          req.user.staff_id || null,
+          diagnosis,
+          notes,
+          prescription
         ]
       );
 
-      return jsonOk(
-        res,
-        {
-          record: result.rows[0],
-          message: "تم حفظ السجل الطبي"
-        },
-        201
-      );
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to create medical record",
-        500
-      );
-    }
+    return jsonOk(res, {
+      record: result.rows[0]
+    });
   }
 );
 
 /* =========================================================
-   DASHBOARD SERVICES
+   SERVICES DASHBOARD
 ========================================================= */
 
 app.get(
   "/api/dashboard/services",
   requireStaff,
   async (req, res) => {
-    try {
-      const result = await pool.query(
-        `
-        SELECT *
-        FROM services
-        ORDER BY created_at ASC
-        `
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM services
+         ORDER BY created_at DESC`
       );
 
-      return jsonOk(res, {
-        services:
-          result.rows.map(mapService)
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load services",
-        500
-      );
-    }
+    return jsonOk(res, {
+      services:
+        result.rows.map(mapService)
+    });
   }
 );
 
@@ -2128,60 +1895,49 @@ app.post(
     if (!name) {
       return jsonError(
         res,
-        "اسم الخدمة مطلوب"
+        "اسم الخدمة مطلوب."
       );
     }
 
     try {
-      const result = await pool.query(
-        `
-        INSERT INTO services
-        (
-          id,
-          name,
-          description,
-          duration_minutes,
-          price,
-          active
-        )
-        VALUES
-        ($1, $2, $3, $4, $5, $6)
-        RETURNING *
-        `,
-        [
-          crypto.randomUUID(),
-          name,
-          req.body.description || "",
-          Number(req.body.duration_minutes) || 30,
-          req.body.price === "" ||
-          req.body.price == null
-            ? null
-            : Number(req.body.price),
-          req.body.active !== false
-        ]
-      );
+      const result =
+        await pool.query(
+          `
+          INSERT INTO services
+            (name,description,
+             duration_minutes,price,active)
+          VALUES ($1,$2,$3,$4,$5)
+          RETURNING *
+          `,
+          [
+            name,
+            String(req.body.description || ""),
+            Number(
+              req.body.duration_minutes || 30
+            ),
+            req.body.price === "" ||
+            req.body.price == null
+              ? null
+              : Number(req.body.price),
+            req.body.active !== false
+          ]
+        );
 
-      return jsonOk(
-        res,
-        {
-          service:
-            mapService(result.rows[0])
-        },
-        201
-      );
+      return jsonOk(res, {
+        service:
+          mapService(result.rows[0])
+      });
     } catch (error) {
       if (error.code === "23505") {
         return jsonError(
           res,
-          "الخدمة موجودة بالفعل"
+          "هذه الخدمة موجودة بالفعل."
         );
       }
 
-      console.error(error);
-
       return jsonError(
         res,
-        "Unable to create service",
+        "تعذر إضافة الخدمة.",
         500
       );
     }
@@ -2192,83 +1948,54 @@ app.patch(
   "/api/dashboard/services/:id",
   requireStaff,
   async (req, res) => {
-    try {
-      const result = await pool.query(
+    const result =
+      await pool.query(
         `
         UPDATE services
         SET
-          name =
-            COALESCE($1, name),
-
-          description =
-            COALESCE($2, description),
-
-          duration_minutes =
-            COALESCE($3, duration_minutes),
-
-          price =
-            CASE
-              WHEN $4::text IS NULL
-              THEN price
-              WHEN $4::text = ''
-              THEN NULL
-              ELSE $4::numeric
-            END,
-
-          active =
-            COALESCE($5, active),
-
-          updated_at = NOW()
-
-        WHERE id = $6
+          name=COALESCE($1,name),
+          description=COALESCE($2,description),
+          duration_minutes=COALESCE($3,duration_minutes),
+          price=$4,
+          active=COALESCE($5,active),
+          updated_at=NOW()
+        WHERE id=$6
         RETURNING *
         `,
         [
-          req.body.name != null
+          req.body.name
             ? String(req.body.name).trim()
             : null,
-
           req.body.description != null
-            ? req.body.description
+            ? String(req.body.description)
             : null,
-
           req.body.duration_minutes != null
             ? Number(req.body.duration_minutes)
             : null,
-
-          req.body.price != null
-            ? String(req.body.price)
-            : null,
-
+          req.body.price === ""
+            ? null
+            : req.body.price != null
+              ? Number(req.body.price)
+              : null,
           req.body.active != null
             ? Boolean(req.body.active)
             : null,
-
           req.params.id
         ]
       );
 
-      if (result.rowCount === 0) {
-        return jsonError(
-          res,
-          "Service not found",
-          404
-        );
-      }
-
-      return jsonOk(res, {
-        service:
-          mapService(result.rows[0])
-      });
-    } catch (error) {
-      console.error(error);
-
+    if (!result.rowCount) {
       return jsonError(
         res,
-        "Unable to update service",
-        500
+        "الخدمة غير موجودة.",
+        404
       );
     }
+
+    return jsonOk(res, {
+      service:
+        mapService(result.rows[0])
+    });
   }
 );
 
@@ -2276,43 +2003,405 @@ app.delete(
   "/api/dashboard/services/:id",
   requireStaff,
   async (req, res) => {
-    try {
-      /*
-        We deactivate services instead of deleting
-        them to preserve appointment history.
-      */
-      const result = await pool.query(
+    await pool.query(
+      `DELETE FROM services WHERE id=$1`,
+      [req.params.id]
+    );
+
+    return jsonOk(res);
+  }
+);
+
+/* =========================================================
+   DASHBOARD DOCTORS
+========================================================= */
+
+app.get(
+  "/api/dashboard/doctors",
+  requireAdmin,
+  async (req, res) => {
+    const result =
+      await pool.query(
         `
-        UPDATE services
-        SET
-          active = FALSE,
-          updated_at = NOW()
-        WHERE id = $1
+        SELECT
+          s.*,
+          u.email
+        FROM staff_users s
+        LEFT JOIN users u
+          ON u.id=s.auth_user_id
+        WHERE s.role='doctor'
+        ORDER BY s.created_at DESC
+        `
+      );
+
+    return jsonOk(res, {
+      doctors:
+        result.rows.map(mapDoctor)
+    });
+  }
+);
+
+/* =========================================================
+   CREATE DOCTOR
+========================================================= */
+
+app.post(
+  "/api/dashboard/doctors",
+  requireAdmin,
+  async (req, res) => {
+    const username =
+      normalizeUsername(req.body.username);
+
+    const password =
+      String(req.body.password || "");
+
+    const fullName =
+      String(req.body.full_name || "").trim();
+
+    const phone =
+      String(req.body.phone || "").trim();
+
+    const email =
+      req.body.email
+        ? String(req.body.email).trim()
+        : null;
+
+    const specialty =
+      String(req.body.specialty || "").trim();
+
+    const area =
+      String(req.body.area || "").trim();
+
+    const imageUrl =
+      String(req.body.image_url || "").trim();
+
+    const bio =
+      String(req.body.bio || "").trim();
+
+    if (!username || username.length < 3) {
+      return jsonError(
+        res,
+        "اسم المستخدم مطلوب ويجب أن يكون 3 أحرف على الأقل."
+      );
+    }
+
+    if (!password || password.length < 6) {
+      return jsonError(
+        res,
+        "كلمة مرور الطبيب يجب أن تكون 6 أحرف على الأقل."
+      );
+    }
+
+    if (!fullName) {
+      return jsonError(
+        res,
+        "اسم الطبيب مطلوب."
+      );
+    }
+
+    const existing =
+      await pool.query(
+        `SELECT id FROM users WHERE username=$1`,
+        [username]
+      );
+
+    if (existing.rowCount) {
+      return jsonError(
+        res,
+        "اسم المستخدم مستخدم بالفعل."
+      );
+    }
+
+    const { salt, hash } =
+      hashPassword(password);
+
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const userResult =
+        await client.query(
+          `
+          INSERT INTO users
+            (username,password_hash,
+             password_salt,role,
+             active,email)
+          VALUES
+            ($1,$2,$3,'doctor',TRUE,$4)
+          RETURNING id
+          `,
+          [
+            username,
+            hash,
+            salt,
+            email
+          ]
+        );
+
+      const userId =
+        userResult.rows[0].id;
+
+      const staffResult =
+        await client.query(
+          `
+          INSERT INTO staff_users
+            (auth_user_id,full_name,
+             phone,username,role,
+             active,specialty,
+             area,image_url,bio,
+             available)
+          VALUES
+            ($1,$2,$3,$4,'doctor',
+             $5,$6,$7,$8,$9,$10)
+          RETURNING *
+          `,
+          [
+            userId,
+            fullName,
+            phone,
+            username,
+            req.body.active !== false,
+            specialty,
+            area,
+            imageUrl,
+            bio,
+            req.body.available !== false
+          ]
+        );
+
+      await client.query("COMMIT");
+
+      return jsonOk(res, {
+        doctor:
+          mapDoctor({
+            ...staffResult.rows[0],
+            email
+          })
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      console.error(error);
+
+      if (error.code === "23505") {
+        return jsonError(
+          res,
+          "بيانات الطبيب موجودة مسبقاً."
+        );
+      }
+
+      return jsonError(
+        res,
+        "تعذر إضافة الطبيب.",
+        500
+      );
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/* =========================================================
+   UPDATE DOCTOR
+========================================================= */
+
+app.patch(
+  "/api/dashboard/doctors/:id",
+  requireAdmin,
+  async (req, res) => {
+    const doctorResult =
+      await pool.query(
+        `
+        SELECT
+          s.*,
+          u.email
+        FROM staff_users s
+        LEFT JOIN users u
+          ON u.id=s.auth_user_id
+        WHERE s.id=$1
+          AND s.role='doctor'
+        LIMIT 1
+        `,
+        [req.params.id]
+      );
+
+    if (!doctorResult.rowCount) {
+      return jsonError(
+        res,
+        "الطبيب غير موجود.",
+        404
+      );
+    }
+
+    const doctor =
+      doctorResult.rows[0];
+
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staffResult =
+        await client.query(
+          `
+          UPDATE staff_users
+          SET
+            full_name=COALESCE($1,full_name),
+            phone=COALESCE($2,phone),
+            specialty=COALESCE($3,specialty),
+            area=COALESCE($4,area),
+            image_url=COALESCE($5,image_url),
+            bio=COALESCE($6,bio),
+            active=COALESCE($7,active),
+            available=COALESCE($8,available),
+            updated_at=NOW()
+          WHERE id=$9
+          RETURNING *
+          `,
+          [
+            req.body.full_name != null
+              ? String(req.body.full_name).trim()
+              : null,
+            req.body.phone != null
+              ? String(req.body.phone).trim()
+              : null,
+            req.body.specialty != null
+              ? String(req.body.specialty).trim()
+              : null,
+            req.body.area != null
+              ? String(req.body.area).trim()
+              : null,
+            req.body.image_url != null
+              ? String(req.body.image_url).trim()
+              : null,
+            req.body.bio != null
+              ? String(req.body.bio).trim()
+              : null,
+            req.body.active != null
+              ? Boolean(req.body.active)
+              : null,
+            req.body.available != null
+              ? Boolean(req.body.available)
+              : null,
+            req.params.id
+          ]
+        );
+
+      if (
+        req.body.email !== undefined
+      ) {
+        await client.query(
+          `
+          UPDATE users
+          SET email=$1,
+              updated_at=NOW()
+          WHERE id=$2
+          `,
+          [
+            req.body.email
+              ? String(req.body.email).trim()
+              : null,
+            doctor.auth_user_id
+          ]
+        );
+      }
+
+      if (
+        req.body.password &&
+        String(req.body.password).length >= 6
+      ) {
+        const { salt, hash } =
+          hashPassword(
+            String(req.body.password)
+          );
+
+        await client.query(
+          `
+          UPDATE users
+          SET password_hash=$1,
+              password_salt=$2,
+              updated_at=NOW()
+          WHERE id=$3
+          `,
+          [
+            hash,
+            salt,
+            doctor.auth_user_id
+          ]
+        );
+      }
+
+      const emailResult =
+        await client.query(
+          `SELECT email
+           FROM users
+           WHERE id=$1`,
+          [doctor.auth_user_id]
+        );
+
+      await client.query("COMMIT");
+
+      return jsonOk(res, {
+        doctor:
+          mapDoctor({
+            ...staffResult.rows[0],
+            email:
+              emailResult.rows[0]?.email || ""
+          })
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      console.error(error);
+
+      return jsonError(
+        res,
+        "تعذر تحديث بيانات الطبيب.",
+        500
+      );
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/* =========================================================
+   DELETE / DEACTIVATE DOCTOR
+========================================================= */
+
+app.delete(
+  "/api/dashboard/doctors/:id",
+  requireAdmin,
+  async (req, res) => {
+    const result =
+      await pool.query(
+        `
+        UPDATE staff_users
+        SET active=FALSE,
+            available=FALSE,
+            updated_at=NOW()
+        WHERE id=$1
+          AND role='doctor'
         RETURNING *
         `,
         [req.params.id]
       );
 
-      if (result.rowCount === 0) {
-        return jsonError(
-          res,
-          "Service not found",
-          404
-        );
-      }
-
-      return jsonOk(res, {
-        message: "تم إيقاف الخدمة"
-      });
-    } catch (error) {
-      console.error(error);
-
+    if (!result.rowCount) {
       return jsonError(
         res,
-        "Unable to delete service",
-        500
+        "الطبيب غير موجود.",
+        404
       );
     }
+
+    return jsonOk(res, {
+      message:
+        "تم إيقاف الطبيب بنجاح."
+    });
   }
 );
 
@@ -2324,27 +2413,16 @@ app.get(
   "/api/dashboard/ads",
   requireStaff,
   async (req, res) => {
-    try {
-      const result = await pool.query(
-        `
+    const result =
+      await pool.query(`
         SELECT *
         FROM ads
         ORDER BY created_at DESC
-        `
-      );
+      `);
 
-      return jsonOk(res, {
-        ads: result.rows
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to load ads",
-        500
-      );
-    }
+    return jsonOk(res, {
+      ads: result.rows
+    });
   }
 );
 
@@ -2352,77 +2430,30 @@ app.post(
   "/api/dashboard/ads",
   requireStaff,
   async (req, res) => {
-    const title =
-      String(req.body.title || "").trim();
-
-    if (!title) {
-      return jsonError(
-        res,
-        "عنوان الإعلان مطلوب"
-      );
-    }
-
-    try {
-      const result = await pool.query(
+    const result =
+      await pool.query(
         `
         INSERT INTO ads
-        (
-          id,
-          title,
-          description,
-          image_url,
-          target_url,
-          business_name,
-          business_type,
-          phone,
-          active,
-          paid,
-          start_date,
-          end_date
-        )
+          (title,description,
+           image_url,target_url,
+           advertiser_name,active)
         VALUES
-        (
-          $1, $2, $3, $4, $5, $6,
-          $7, $8, $9, $10, $11, $12
-        )
+          ($1,$2,$3,$4,$5,$6)
         RETURNING *
         `,
         [
-          crypto.randomUUID(),
-          title,
-          req.body.description || "",
-          req.body.image_url || "",
-          req.body.target_url || "",
-          req.body.business_name || "",
-          req.body.business_type || "",
-          req.body.phone || "",
-          req.body.active !== false,
-          Boolean(req.body.paid),
-          validDate(req.body.start_date)
-            ? req.body.start_date
-            : null,
-          validDate(req.body.end_date)
-            ? req.body.end_date
-            : null
+          String(req.body.title || "").trim(),
+          String(req.body.description || ""),
+          String(req.body.image_url || ""),
+          String(req.body.target_url || ""),
+          String(req.body.advertiser_name || ""),
+          req.body.active !== false
         ]
       );
 
-      return jsonOk(
-        res,
-        {
-          ad: result.rows[0]
-        },
-        201
-      );
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to create ad",
-        500
-      );
-    }
+    return jsonOk(res, {
+      ad: result.rows[0]
+    });
   }
 );
 
@@ -2430,130 +2461,55 @@ app.patch(
   "/api/dashboard/ads/:id",
   requireStaff,
   async (req, res) => {
-    try {
-      const result = await pool.query(
+    const result =
+      await pool.query(
         `
         UPDATE ads
         SET
-          title =
-            COALESCE($1, title),
-
-          description =
-            COALESCE($2, description),
-
-          image_url =
-            COALESCE($3, image_url),
-
-          target_url =
-            COALESCE($4, target_url),
-
-          business_name =
-            COALESCE($5, business_name),
-
-          business_type =
-            COALESCE($6, business_type),
-
-          phone =
-            COALESCE($7, phone),
-
-          active =
-            COALESCE($8, active),
-
-          paid =
-            COALESCE($9, paid),
-
-          start_date =
-            CASE
-              WHEN $10::text IS NULL
-              THEN start_date
-              WHEN $10::text = ''
-              THEN NULL
-              ELSE $10::date
-            END,
-
-          end_date =
-            CASE
-              WHEN $11::text IS NULL
-              THEN end_date
-              WHEN $11::text = ''
-              THEN NULL
-              ELSE $11::date
-            END,
-
-          updated_at = NOW()
-
-        WHERE id = $12
+          title=COALESCE($1,title),
+          description=COALESCE($2,description),
+          image_url=COALESCE($3,image_url),
+          target_url=COALESCE($4,target_url),
+          advertiser_name=COALESCE($5,advertiser_name),
+          active=COALESCE($6,active),
+          updated_at=NOW()
+        WHERE id=$7
         RETURNING *
         `,
         [
           req.body.title != null
             ? String(req.body.title).trim()
             : null,
-
           req.body.description != null
-            ? req.body.description
+            ? String(req.body.description)
             : null,
-
           req.body.image_url != null
-            ? req.body.image_url
+            ? String(req.body.image_url)
             : null,
-
           req.body.target_url != null
-            ? req.body.target_url
+            ? String(req.body.target_url)
             : null,
-
-          req.body.business_name != null
-            ? req.body.business_name
+          req.body.advertiser_name != null
+            ? String(req.body.advertiser_name)
             : null,
-
-          req.body.business_type != null
-            ? req.body.business_type
-            : null,
-
-          req.body.phone != null
-            ? req.body.phone
-            : null,
-
           req.body.active != null
             ? Boolean(req.body.active)
             : null,
-
-          req.body.paid != null
-            ? Boolean(req.body.paid)
-            : null,
-
-          req.body.start_date != null
-            ? String(req.body.start_date)
-            : null,
-
-          req.body.end_date != null
-            ? String(req.body.end_date)
-            : null,
-
           req.params.id
         ]
       );
 
-      if (result.rowCount === 0) {
-        return jsonError(
-          res,
-          "Ad not found",
-          404
-        );
-      }
-
-      return jsonOk(res, {
-        ad: result.rows[0]
-      });
-    } catch (error) {
-      console.error(error);
-
+    if (!result.rowCount) {
       return jsonError(
         res,
-        "Unable to update ad",
-        500
+        "الإعلان غير موجود.",
+        404
       );
     }
+
+    return jsonOk(res, {
+      ad: result.rows[0]
+    });
   }
 );
 
@@ -2561,103 +2517,53 @@ app.delete(
   "/api/dashboard/ads/:id",
   requireStaff,
   async (req, res) => {
-    try {
-      const result = await pool.query(
-        `
-        DELETE FROM ads
-        WHERE id = $1
-        RETURNING id
-        `,
-        [req.params.id]
-      );
+    await pool.query(
+      `DELETE FROM ads WHERE id=$1`,
+      [req.params.id]
+    );
 
-      if (result.rowCount === 0) {
-        return jsonError(
-          res,
-          "Ad not found",
-          404
-        );
-      }
-
-      return jsonOk(res, {
-        message: "تم حذف الإعلان"
-      });
-    } catch (error) {
-      console.error(error);
-
-      return jsonError(
-        res,
-        "Unable to delete ad",
-        500
-      );
-    }
+    return jsonOk(res);
   }
 );
 
 /* =========================================================
-   STATIC FRONTEND
+   STATIC FILES
 ========================================================= */
 
-const publicPath =
-  path.join(__dirname, "public");
-
 app.use(
-  express.static(publicPath)
+  express.static(
+    path.join(__dirname, "public")
+  )
 );
 
-app.get("*splat", (req, res) => {
+app.get("*", (req, res) => {
   res.sendFile(
-    path.join(publicPath, "index.html")
+    path.join(
+      __dirname,
+      "public",
+      "index.html"
+    )
   );
 });
-
-/* =========================================================
-   ERROR HANDLER
-========================================================= */
-
-app.use(
-  (err, req, res, next) => {
-    console.error(
-      "Unhandled server error:",
-      err
-    );
-
-    if (res.headersSent) {
-      return next(err);
-    }
-
-    return jsonError(
-      res,
-      "Internal server error",
-      500
-    );
-  }
-);
 
 /* =========================================================
    START
 ========================================================= */
 
-async function startServer() {
+async function start() {
   try {
     await initDatabase();
 
+    await pool.query("SELECT 1");
+
     app.listen(PORT, () => {
       console.log(
-        `Medical Booking server running on port ${PORT}`
-      );
-
-      console.log(
-        "Database: Neon PostgreSQL"
-      );
-
-      console.log(
-        "Supabase: disabled"
+        `Medical Booking running on port ${PORT}`
       );
     });
   } catch (error) {
     console.error(
-      "Server startup failed:",
+      "Database initialization failed:",
       error
     );
 
@@ -2665,4 +2571,4 @@ async function startServer() {
   }
 }
 
-startServer();
+start();
