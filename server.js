@@ -541,94 +541,38 @@ async function initDatabase() {
 ========================================================= */
 
 async function createIndexes() {
-  console.log("Creating database indexes...");
+  const indexes = [
+    "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
+    "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
+    "CREATE INDEX IF NOT EXISTS idx_patients_user_id ON patients(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)",
+    "CREATE INDEX IF NOT EXISTS idx_staff_users_username ON staff_users(username)",
+    "CREATE INDEX IF NOT EXISTS idx_staff_users_role ON staff_users(role)",
+    "CREATE INDEX IF NOT EXISTS idx_services_active ON services(active)",
+    "CREATE INDEX IF NOT EXISTS idx_doctors_active ON doctors(active)",
+    "CREATE INDEX IF NOT EXISTS idx_doctors_specialty ON doctors(specialty)",
+    "CREATE INDEX IF NOT EXISTS idx_doctors_area ON doctors(area)",
+    "CREATE INDEX IF NOT EXISTS idx_appointments_patient_id ON appointments(patient_id)",
+    "CREATE INDEX IF NOT EXISTS idx_appointments_doctor_id ON appointments(doctor_id)",
+    "CREATE INDEX IF NOT EXISTS idx_appointments_service_id ON appointments(service_id)",
+    "CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)",
+    "CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status)",
+    "CREATE INDEX IF NOT EXISTS idx_medical_records_patient_id ON medical_records(patient_id)",
+    "CREATE INDEX IF NOT EXISTS idx_medical_records_doctor_id ON medical_records(doctor_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ads_active ON ads(active)",
+    "CREATE INDEX IF NOT EXISTS idx_ad_impressions_ad_id ON ad_impressions(ad_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ad_clicks_ad_id ON ad_clicks(ad_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_access_token_hash ON sessions(access_token_hash)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_refresh_token_hash ON sessions(refresh_token_hash)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_staff_user_id ON sessions(staff_user_id)"
+  ];
 
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_users_username
-    ON users(username)
-  `);
+  for (const sql of indexes) {
+    await pool.query(sql);
+  }
 
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_users_role
-    ON users(role)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_patients_user_id
-    ON patients(user_id)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_patients_phone
-    ON patients(phone)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_staff_users_username
-    ON staff_users(username)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_doctors_active
-    ON doctors(active)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_doctors_specialty
-    ON doctors(specialty)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_doctors_area
-    ON doctors(area)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_services_active
-    ON services(active)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_appointments_date
-    ON appointments(appointment_date)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_appointments_doctor
-    ON appointments(doctor_id)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_appointments_patient
-    ON appointments(patient_id)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_appointments_status
-    ON appointments(status)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_medical_records_patient
-    ON medical_records(patient_id)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_ads_active
-    ON ads(active)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_sessions_access_token
-    ON sessions(access_token_hash)
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_sessions_refresh_token
-    ON sessions(refresh_token_hash)
-  `);
-
-  console.log("Database indexes checked.");
+  console.log("Database indexes ready.");
 }
 
 /* =========================================================
