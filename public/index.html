@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07527c">
+  <title>موعدي | صحتك أولاً</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="logo" href="#home">
+      <span class="logo-word">موعدي</span>
+      <span class="logo-sub">صحتك أولاً</span>
+      <span class="logo-heart">♥</span>
+    </a>
+
+    <nav class="nav">
+      <a class="active" href="#home">الرئيسية</a>
+      <a href="#doctors">الأطباء</a>
+      <a href="#specialties">التخصصات</a>
+      <a href="#research">البحث والدراسات</a>
+      <a href="#programs">البرامج</a>
+      <a href="#news">الأخبار</a>
+      <a href="#contact">تواصل معنا</a>
+    </nav>
+
+    <div class="account-actions">
+      <button class="login" id="loginBtn">تسجيل الدخول <span>♙</span></button>
+      <button class="signup" id="signupBtn">إنشاء حساب <span>♙</span></button>
+    </div>
+
+    <button class="mobile-menu" id="mobileMenu">☰</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero" id="home">
+    <div class="hero-background"></div>
+
+    <div class="hero-content">
+      <div class="doctor-visual">
+        <img src="doctor-reference.jpg" alt="طبيبة" class="doctor-image">
+      </div>
+
+      <div class="hero-text">
+        <div class="brand-hero">موعدي</div>
+        <h1>احجز موعدك الطبي بسهولة</h1>
+        <p>منصتك الموثوقة لحجز المواعيد مع أفضل الأطباء والمراكز الطبية<br>في جميع التخصصات، بكل سهولة وأمان.</p>
+
+        <form class="search-panel" id="searchForm">
+          <div class="search-input">
+            <span>⌕</span>
+            <input id="searchName" placeholder="إبحث عن طبيب أو تخصص..." autocomplete="off">
+          </div>
+          <div class="select-box">
+            <span>⌖</span>
+            <select id="area">
+              <option value="">اختر المنطقة</option>
+              <option>الأبيض</option>
+              <option>الخرطوم</option>
+              <option>أم درمان</option>
+              <option>بحري</option>
+            </select>
+          </div>
+          <div class="select-box">
+            <span>▦</span>
+            <select id="specialty">
+              <option value="">اختر التخصص</option>
+              <option>طب الأطفال</option>
+              <option>الباطنية</option>
+              <option>النساء والتوليد</option>
+              <option>طب القلب</option>
+              <option>طب الصدر</option>
+              <option>العظام</option>
+              <option>الجلدية والتجميل</option>
+              <option>الجهاز الهضمي</option>
+              <option>طب الأعصاب</option>
+            </select>
+          </div>
+          <button type="submit" class="search-button">البحث <span>⌕</span></button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="trust-bar">
+    <div class="trust-item">
+      <div class="trust-icon">♧</div>
+      <div><strong>دعم متواصل</strong><small>نحن معك دائماً</small></div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-icon">♙</div>
+      <div><strong>أطباء متخصصون</strong><small>أفضل الكفاءات الطبية</small></div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-icon">◷</div>
+      <div><strong>حجز سريع</strong><small>لمواعيدك خلال دقائق</small></div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-icon">♢</div>
+      <div><strong>آمن وموثوق</strong><small>حماية بياناتك في كل خطوة</small></div>
+    </div>
+  </section>
+
+  <section class="content-section specialties" id="specialties">
+    <div class="section-heading">
+      <div>
+        <h2>التخصصات الطبية</h2>
+        <p>اختر التخصص المناسب لك</p>
+      </div>
+      <a href="#doctors" class="all-link">عرض جميع التخصصات ←</a>
+    </div>
+
+    <div class="specialty-row">
+      <button class="specialty-card c1" data-specialty="طب الأعصاب"><span>♧</span><strong>طب الأعصاب</strong></button>
+      <button class="specialty-card c2" data-specialty="النساء والتوليد"><span>♙</span><strong>النساء والتوليد</strong></button>
+      <button class="specialty-card c3" data-specialty="طب القلب"><span>♥</span><strong>طب القلب</strong></button>
+      <button class="specialty-card c4" data-specialty="طب الصدر"><span>♧</span><strong>طب الصدر</strong></button>
+      <button class="specialty-card c5" data-specialty="الجهاز الهضمي"><span>♨</span><strong>الجهاز الهضمي</strong></button>
+      <button class="specialty-card c6" data-specialty="العظام"><span>♙</span><strong>العظام</strong></button>
+      <button class="specialty-card c7" data-specialty="الجلدية والتجميل"><span>✦</span><strong>الجلدية والتجميل</strong></button>
+      <button class="specialty-card c8" data-specialty="طب الأطفال"><span>♧</span><strong>طب الأطفال</strong></button>
+    </div>
+  </section>
+
+  <section class="content-section doctors" id="doctors">
+    <div class="section-heading">
+      <div>
+        <h2>أطباء مميزون</h2>
+        <p>تعرف على أفضل الأطباء في مختلف التخصصات</p>
+      </div>
+      <a href="#search" class="all-link">عرض جميع الأطباء ←</a>
+    </div>
+
+    <div class="doctor-slider" id="doctorGrid">
+      <button class="slider-arrow left" id="nextDoctor">‹</button>
+
+      <article class="doctor-card" data-name="د. خالد عبدالرحمن" data-specialty="الباطنية">
+        <img src="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=400&q=85" alt="طبيب">
+        <div class="doctor-data">
+          <h3>د. خالد عبدالرحمن</h3><span>طب الباطنية</span><b>★ 4.6</b>
+          <button class="book">حجز موعد <span>▣</span></button>
+        </div>
+      </article>
+
+      <article class="doctor-card" data-name="د. سارة محمد علي" data-specialty="النساء والتوليد">
+        <img src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=400&q=85" alt="طبيبة">
+        <div class="doctor-data">
+          <h3>د. سارة محمد علي</h3><span>النساء والتوليد</span><b>★ 4.9</b>
+          <button class="book">حجز موعد <span>▣</span></button>
+        </div>
+      </article>
+
+      <article class="doctor-card" data-name="د. أحمد عبدالله" data-specialty="طب القلب">
+        <img src="https://images.unsplash.com/photo-1582750433449-648ed127bb54?auto=format&fit=crop&w=400&q=85" alt="طبيب">
+        <div class="doctor-data">
+          <h3>د. أحمد عبدالله</h3><span>طب القلب</span><b>★ 4.7</b>
+          <button class="book">حجز موعد <span>▣</span></button>
+        </div>
+      </article>
+
+      <article class="doctor-card" data-name="د. مريم أحمد محمد" data-specialty="طب الأطفال">
+        <img src="https://images.unsplash.com/photo-1594824476967-48c8b964273f?auto=format&fit=crop&w=400&q=85" alt="طبيبة">
+        <div class="doctor-data">
+          <h3>د. مريم أحمد محمد</h3><span>طب الأطفال</span><b>★ 4.8</b>
+          <button class="book">حجز موعد <span>▣</span></button>
+        </div>
+      </article>
+
+      <button class="slider-arrow right" id="prevDoctor">›</button>
+    </div>
+  </section>
+
+  <section class="bottom-banner" id="contact">
+    <div class="wave"></div>
+    <strong>معاً نحو صحة أفضل <span>♥</span></strong>
+    <p>“صحتك اليوم ... هي مستقبل أفضل غداً”</p>
+  </section>
+
+  <div id="searchResults" class="search-results" hidden></div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
