@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "express": "^5.1.0",
-    "@supabase/supabase-js": "^2.57.0"
+    "pg": "^8.16.3"
   }
 }
