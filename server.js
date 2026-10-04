@@ -926,8 +926,79 @@ app.post(
 app.post(
   "/api/admin/login",
   async (req, res) => {
-    req.url = "/api/staff/login";
-    return app._router.handle(req, res);
+    const username =
+      normalizeUsername(req.body.username);
+
+    const password =
+      String(req.body.password || "");
+
+    const result =
+      await pool.query(
+        `SELECT *
+         FROM users
+         WHERE username=$1
+           AND role IN ('admin','doctor','secretary')
+           AND active=TRUE
+         LIMIT 1`,
+        [username]
+      );
+
+    const user =
+      result.rows[0];
+
+    if (
+      !user ||
+      !verifyPassword(
+        password,
+        user.password_salt,
+        user.password_hash
+      )
+    ) {
+      return jsonError(
+        res,
+        "بيانات الدخول غير صحيحة.",
+        401
+      );
+    }
+
+    const staffResult =
+      await pool.query(
+        `SELECT *
+         FROM staff_users
+         WHERE auth_user_id=$1
+           AND active=TRUE
+         LIMIT 1`,
+        [user.id]
+      );
+
+    const staff =
+      staffResult.rows[0];
+
+    if (!staff) {
+      return jsonError(
+        res,
+        "حساب الموظف غير مكتمل.",
+        403
+      );
+    }
+
+    const session =
+      await createSession(user.id);
+
+    return jsonOk(res, {
+      token: session.token,
+      refreshToken: session.refreshToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        email: user.email
+      },
+      staff: mapDoctor({
+        ...staff,
+        email: user.email
+      })
+    });
   }
 );
 
@@ -2536,7 +2607,11 @@ app.use(
   )
 );
 
-app.get("*", (req, res) => {
+/*
+   Express 5 compatible fallback.
+   Do NOT use app.get("*") here.
+*/
+app.use((req, res) => {
   res.sendFile(
     path.join(
       __dirname,
