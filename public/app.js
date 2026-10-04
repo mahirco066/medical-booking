@@ -1,1514 +1,2081 @@
 /* =========================================================
-   موعدي - Frontend Application
-========================================================= */
+   موعدي - Medical Booking
+   public/app.js
+   Dynamic doctors + real booking + patient authentication
+   ========================================================= */
 
-const API = "/api";
+(() => {
+  "use strict";
 
-/* =========================================================
-   STORAGE
-========================================================= */
+  const API = "/api";
 
-function getToken() {
-  return localStorage.getItem("medical_booking_token") || "";
-}
-
-function getRefreshToken() {
-  return localStorage.getItem("medical_booking_refresh_token") || "";
-}
-
-function getCurrentUser() {
-  try {
-    return JSON.parse(
-      localStorage.getItem("medical_booking_user") || "null"
-    );
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(data) {
-  if (data?.token) {
-    localStorage.setItem(
-      "medical_booking_token",
-      data.token
-    );
-  }
-
-  if (data?.refreshToken) {
-    localStorage.setItem(
-      "medical_booking_refresh_token",
-      data.refreshToken
-    );
-  }
-
-  if (data?.user) {
-    localStorage.setItem(
-      "medical_booking_user",
-      JSON.stringify(data.user)
-    );
-  }
-
-  if (data?.patient) {
-    localStorage.setItem(
-      "medical_booking_patient",
-      JSON.stringify(data.patient)
-    );
-  }
-}
-
-function clearSession() {
-  localStorage.removeItem("medical_booking_token");
-  localStorage.removeItem("medical_booking_refresh_token");
-  localStorage.removeItem("medical_booking_user");
-  localStorage.removeItem("medical_booking_patient");
-}
-
-/* =========================================================
-   API HELPER
-========================================================= */
-
-async function apiFetch(url, options = {}) {
-  const headers = {
-    ...(options.headers || {})
+  const STORAGE = {
+    token: "medical_booking_token",
+    refreshToken: "medical_booking_refresh_token",
+    user: "medical_booking_user",
+    patient: "medical_booking_patient"
   };
 
-  if (options.body && !headers["Content-Type"]) {
-    headers["Content-Type"] = "application/json";
+  let doctors = [];
+  let services = [];
+  let selectedDoctor = null;
+
+  /* =========================================================
+     Basic helpers
+     ========================================================= */
+
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) =>
+    Array.from(root.querySelectorAll(selector));
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
-  const token = getToken();
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  function getToken() {
+    return localStorage.getItem(STORAGE.token) || "";
   }
 
-  let response;
+  function getStoredUser() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE.user) || "null");
+    } catch {
+      return null;
+    }
+  }
 
-  try {
-    response = await fetch(`${API}${url}`, {
+  function getStoredPatient() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE.patient) || "null");
+    } catch {
+      return null;
+    }
+  }
+
+  function saveAuth(data) {
+    if (!data) return;
+
+    if (data.token) {
+      localStorage.setItem(STORAGE.token, data.token);
+    }
+
+    if (data.refresh_token) {
+      localStorage.setItem(STORAGE.refreshToken, data.refresh_token);
+    }
+
+    if (data.user) {
+      localStorage.setItem(STORAGE.user, JSON.stringify(data.user));
+    }
+
+    if (data.patient) {
+      localStorage.setItem(STORAGE.patient, JSON.stringify(data.patient));
+    }
+  }
+
+  function clearAuth() {
+    localStorage.removeItem(STORAGE.token);
+    localStorage.removeItem(STORAGE.refreshToken);
+    localStorage.removeItem(STORAGE.user);
+    localStorage.removeItem(STORAGE.patient);
+  }
+
+  function notify(message, type = "info") {
+    let box = document.getElementById("medicalBookingToast");
+
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "medicalBookingToast";
+
+      Object.assign(box.style, {
+        position: "fixed",
+        top: "22px",
+        right: "22px",
+        zIndex: "99999",
+        maxWidth: "360px",
+        padding: "14px 18px",
+        borderRadius: "14px",
+        fontFamily: "Cairo, sans-serif",
+        fontSize: "14px",
+        lineHeight: "1.7",
+        boxShadow: "0 10px 30px rgba(0,0,0,.15)",
+        transition: "all .25s ease",
+        opacity: "0",
+        transform: "translateY(-10px)"
+      });
+
+      document.body.appendChild(box);
+    }
+
+    box.textContent = message;
+
+    if (type === "success") {
+      box.style.background = "#16a34a";
+      box.style.color = "#fff";
+    } else if (type === "error") {
+      box.style.background = "#dc2626";
+      box.style.color = "#fff";
+    } else {
+      box.style.background = "#0f766e";
+      box.style.color = "#fff";
+    }
+
+    box.style.opacity = "1";
+    box.style.transform = "translateY(0)";
+
+    clearTimeout(box._timer);
+
+    box._timer = setTimeout(() => {
+      box.style.opacity = "0";
+      box.style.transform = "translateY(-10px)";
+    }, 3500);
+  }
+
+  /* =========================================================
+     API helper
+     ========================================================= */
+
+  async function api(path, options = {}) {
+    const headers = {
+      ...(options.headers || {})
+    };
+
+    if (options.body && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const token = getToken();
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API}${path}`, {
       ...options,
       headers
     });
-  } catch (error) {
-    throw new Error(
-      "تعذر الاتصال بالخادم. تأكد من اتصال الإنترنت."
-    );
-  }
 
-  let data = {};
+    let data = null;
 
-  try {
-    data = await response.json();
-  } catch {
-    data = {};
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data.error ||
-      data.message ||
-      "حدث خطأ غير متوقع"
-    );
-  }
-
-  return data;
-}
-
-/* =========================================================
-   MOBILE MENU
-========================================================= */
-
-const menu = document.getElementById("mobileMenu");
-const nav = document.querySelector(".nav");
-
-menu?.addEventListener("click", () => {
-  const isOpen = nav.style.display === "flex";
-
-  nav.style.display = isOpen ? "none" : "flex";
-  nav.style.position = "absolute";
-  nav.style.top = "66px";
-  nav.style.right = "0";
-  nav.style.left = "0";
-  nav.style.background = "#07517b";
-  nav.style.padding = "12px 20px";
-  nav.style.flexDirection = "column";
-  nav.style.gap = "5px";
-});
-
-/* إغلاق القائمة بعد اختيار رابط */
-document.querySelectorAll(".nav a").forEach(link => {
-  link.addEventListener("click", () => {
-    if (window.innerWidth <= 850) {
-      nav.style.display = "none";
-    }
-  });
-});
-
-/* =========================================================
-   SPECIALTIES
-========================================================= */
-
-document.querySelectorAll(".specialty-card").forEach(card => {
-  card.addEventListener("click", () => {
-    const specialty = card.dataset.specialty || "";
-
-    const specialtySelect =
-      document.getElementById("specialty");
-
-    if (specialtySelect) {
-      specialtySelect.value = specialty;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
     }
 
-    document
-      .getElementById("searchForm")
-      ?.scrollIntoView({
-        behavior: "smooth",
-        block: "center"
-      });
-  });
-});
+    if (!response.ok) {
+      const message =
+        data?.error ||
+        data?.message ||
+        "حدث خطأ أثناء تنفيذ الطلب.";
 
-/* =========================================================
-   SEARCH
-========================================================= */
+      const error = new Error(message);
+      error.status = response.status;
+      error.data = data;
 
-const searchForm =
-  document.getElementById("searchForm");
-
-searchForm?.addEventListener("submit", async event => {
-  event.preventDefault();
-
-  const name =
-    document.getElementById("searchName")
-      ?.value
-      .trim() || "";
-
-  const specialty =
-    document.getElementById("specialty")
-      ?.value || "";
-
-  const area =
-    document.getElementById("area")
-      ?.value || "";
-
-  const cards = [
-    ...document.querySelectorAll(".doctor-card")
-  ];
-
-  let count = 0;
-
-  cards.forEach(card => {
-    const doctorName =
-      card.dataset.name || "";
-
-    const doctorSpecialty =
-      card.dataset.specialty || "";
-
-    const matchesName =
-      !name ||
-      doctorName.includes(name) ||
-      doctorSpecialty.includes(name);
-
-    const matchesSpecialty =
-      !specialty ||
-      doctorSpecialty === specialty;
-
-    const visible =
-      matchesName &&
-      matchesSpecialty;
-
-    card.style.display =
-      visible ? "flex" : "none";
-
-    if (visible) {
-      count++;
+      throw error;
     }
-  });
 
-  document
-    .getElementById("doctors")
-    ?.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
+    return data;
+  }
+
+  /* =========================================================
+     Modal system
+     ========================================================= */
+
+  function createModal(id, title, bodyHtml, width = "520px") {
+    const old = document.getElementById(id);
+
+    if (old) {
+      old.remove();
+    }
+
+    const overlay = document.createElement("div");
+
+    overlay.id = id;
+
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      background: "rgba(15, 23, 42, .62)",
+      backdropFilter: "blur(5px)",
+      WebkitBackdropFilter: "blur(5px)",
+      zIndex: "9999",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+      direction: "rtl"
     });
 
-  const result =
-    document.getElementById("searchResults");
+    overlay.innerHTML = `
+      <div class="mb-modal-box" style="
+        width:min(100%, ${width});
+        max-height:90vh;
+        overflow:auto;
+        background:#fff;
+        border-radius:22px;
+        box-shadow:0 25px 70px rgba(0,0,0,.25);
+        font-family:Cairo,sans-serif;
+      ">
+        <div style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:15px;
+          padding:20px 24px;
+          border-bottom:1px solid #eef2f7;
+        ">
+          <h3 style="
+            margin:0;
+            color:#0f172a;
+            font-size:20px;
+            font-weight:800;
+          ">${escapeHtml(title)}</h3>
 
-  if (result) {
-    result.hidden = false;
+          <button type="button"
+            class="mb-close"
+            style="
+              width:38px;
+              height:38px;
+              border:0;
+              border-radius:50%;
+              background:#f1f5f9;
+              color:#334155;
+              font-size:23px;
+              cursor:pointer;
+            "
+          >&times;</button>
+        </div>
 
-    result.textContent =
-      count
-        ? `تم العثور على ${count} طبيب مطابق للبحث${area ? ` في ${area}` : ""}.`
-        : "لا توجد نتائج مطابقة حالياً.";
-
-    setTimeout(() => {
-      result.hidden = true;
-    }, 3000);
-  }
-});
-
-/* =========================================================
-   MODAL
-========================================================= */
-
-function removeModal() {
-  document
-    .getElementById("medicalBookingModal")
-    ?.remove();
-}
-
-function createModal(content) {
-  removeModal();
-
-  const overlay =
-    document.createElement("div");
-
-  overlay.id =
-    "medicalBookingModal";
-
-  overlay.innerHTML = `
-    <div class="mb-modal-overlay">
-      <div class="mb-modal">
-        <button class="mb-close" id="mbClose">×</button>
-        ${content}
+        <div style="padding:24px;">
+          ${bodyHtml}
+        </div>
       </div>
-    </div>
-  `;
+    `;
 
-  document.body.appendChild(overlay);
+    document.body.appendChild(overlay);
 
-  document
-    .getElementById("mbClose")
-    ?.addEventListener(
-      "click",
-      removeModal
-    );
+    const close = () => overlay.remove();
 
-  overlay
-    .querySelector(".mb-modal-overlay")
-    ?.addEventListener("click", event => {
-      if (
-        event.target.classList.contains(
-          "mb-modal-overlay"
-        )
-      ) {
-        removeModal();
+    $(".mb-close", overlay)?.addEventListener("click", close);
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        close();
       }
     });
 
-  return overlay;
-}
-
-/* =========================================================
-   MODAL STYLE
-========================================================= */
-
-function injectModalStyles() {
-  if (
-    document.getElementById(
-      "medicalBookingModalStyles"
-    )
-  ) {
-    return;
+    return overlay;
   }
 
-  const style =
-    document.createElement("style");
-
-  style.id =
-    "medicalBookingModalStyles";
-
-  style.textContent = `
-    .mb-modal-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      background: rgba(0, 0, 0, .58);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 18px;
-      direction: rtl;
-    }
-
-    .mb-modal {
-      position: relative;
-      width: min(470px, 100%);
-      max-height: 92vh;
-      overflow-y: auto;
-      background: #fff;
-      border-radius: 22px;
-      padding: 28px;
-      box-shadow: 0 25px 80px rgba(0,0,0,.25);
-      font-family: Cairo, sans-serif;
-    }
-
-    .mb-close {
-      position: absolute;
-      top: 10px;
-      left: 12px;
-      border: 0;
-      background: transparent;
-      font-size: 30px;
-      cursor: pointer;
-      color: #777;
-      line-height: 1;
-    }
-
-    .mb-title {
-      color: #07527c;
-      margin: 0 0 6px;
-      font-size: 25px;
-      font-weight: 800;
-    }
-
-    .mb-subtitle {
-      color: #777;
-      margin: 0 0 22px;
-      font-size: 14px;
-    }
-
-    .mb-form-group {
-      margin-bottom: 14px;
-    }
-
-    .mb-form-group label {
-      display: block;
-      margin-bottom: 6px;
-      color: #333;
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    .mb-form-group input,
-    .mb-form-group select,
-    .mb-form-group textarea {
-      width: 100%;
-      box-sizing: border-box;
-      border: 1px solid #d8e0e5;
-      border-radius: 11px;
-      padding: 12px 13px;
-      font-family: Cairo, sans-serif;
-      font-size: 14px;
-      outline: none;
-      background: #fff;
-    }
-
-    .mb-form-group input:focus,
-    .mb-form-group select:focus,
-    .mb-form-group textarea:focus {
-      border-color: #07527c;
-      box-shadow: 0 0 0 3px rgba(7,82,124,.08);
-    }
-
-    .mb-submit {
-      width: 100%;
-      border: 0;
-      border-radius: 12px;
-      padding: 13px;
-      background: #07527c;
-      color: white;
-      font-family: Cairo, sans-serif;
-      font-size: 15px;
-      font-weight: 800;
-      cursor: pointer;
-      margin-top: 8px;
-    }
-
-    .mb-submit:hover {
-      opacity: .92;
-    }
-
-    .mb-submit:disabled {
-      opacity: .6;
-      cursor: not-allowed;
-    }
-
-    .mb-switch {
-      text-align: center;
-      margin-top: 17px;
-      font-size: 13px;
-      color: #777;
-    }
-
-    .mb-switch button {
-      border: 0;
-      background: none;
-      color: #07527c;
-      font-family: Cairo, sans-serif;
-      font-weight: 800;
-      cursor: pointer;
-    }
-
-    .mb-message {
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin-bottom: 14px;
-      font-size: 13px;
-      display: none;
-    }
-
-    .mb-message.error {
-      display: block;
-      background: #fff0f0;
-      color: #b42318;
-    }
-
-    .mb-message.success {
-      display: block;
-      background: #edfdf3;
-      color: #067647;
-    }
-
-    .mb-user-box {
-      background: #f4f8fa;
-      border-radius: 14px;
-      padding: 15px;
-      margin-bottom: 18px;
-    }
-
-    .mb-user-box strong {
-      color: #07527c;
-    }
-
-    .mb-appointment-success {
-      text-align: center;
-      padding: 15px 5px;
-    }
-
-    .mb-success-icon {
-      font-size: 45px;
-      margin-bottom: 8px;
-    }
-
-    .mb-appointment-success h3 {
-      color: #07527c;
-      margin: 5px 0 8px;
-    }
-
-    .mb-appointment-success p {
-      color: #666;
-      font-size: 14px;
-      line-height: 1.8;
-    }
-  `;
-
-  document.head.appendChild(style);
-}
-
-injectModalStyles();
-
-/* =========================================================
-   REGISTER MODAL
-========================================================= */
-
-function showRegisterModal() {
-  const modal = createModal(`
-    <h2 class="mb-title">إنشاء حساب</h2>
-    <p class="mb-subtitle">
-      أنشئ حسابك في منصة موعدي وابدأ بحجز مواعيدك الطبية.
-    </p>
-
-    <div class="mb-message" id="registerMessage"></div>
-
-    <form id="registerForm">
-
-      <div class="mb-form-group">
-        <label for="registerUsername">
-          اسم المستخدم
-        </label>
-        <input
-          id="registerUsername"
-          name="username"
-          type="text"
-          placeholder="مثال: mahir123"
-          autocomplete="username"
-          required
-          minlength="3"
-        >
-      </div>
-
-      <div class="mb-form-group">
-        <label for="registerFullName">
-          الاسم الكامل
-        </label>
-        <input
-          id="registerFullName"
-          name="full_name"
-          type="text"
-          placeholder="اكتب اسمك الكامل"
-          autocomplete="name"
-          required
-          minlength="2"
-        >
-      </div>
-
-      <div class="mb-form-group">
-        <label for="registerPhone">
-          رقم الهاتف
-        </label>
-        <input
-          id="registerPhone"
-          name="phone"
-          type="tel"
-          placeholder="مثال: 09xxxxxxxx"
-          autocomplete="tel"
-          required
-        >
-      </div>
-
-      <div class="mb-form-group">
-        <label for="registerEmail">
-          البريد الإلكتروني
-          <span style="font-weight:400;color:#999;">
-            (اختياري)
-          </span>
-        </label>
-        <input
-          id="registerEmail"
-          name="email"
-          type="email"
-          placeholder="example@email.com"
-          autocomplete="email"
-        >
-      </div>
-
-      <div class="mb-form-group">
-        <label for="registerPassword">
-          كلمة المرور
-        </label>
-        <input
-          id="registerPassword"
-          name="password"
-          type="password"
-          placeholder="6 أحرف على الأقل"
-          autocomplete="new-password"
-          required
-          minlength="6"
-        >
-      </div>
-
-      <div class="mb-form-group">
-        <label for="registerPasswordConfirm">
-          تأكيد كلمة المرور
-        </label>
-        <input
-          id="registerPasswordConfirm"
-          name="password_confirm"
-          type="password"
-          placeholder="أعد كتابة كلمة المرور"
-          autocomplete="new-password"
-          required
-        >
-      </div>
-
-      <button
-        type="submit"
-        class="mb-submit"
-        id="registerSubmit"
-      >
-        إنشاء الحساب
-      </button>
-
-    </form>
-
-    <div class="mb-switch">
-      لديك حساب بالفعل؟
-      <button type="button" id="switchToLogin">
-        تسجيل الدخول
-      </button>
-    </div>
-  `);
-
-  modal
-    .querySelector("#switchToLogin")
-    ?.addEventListener(
-      "click",
-      showLoginModal
-    );
-
-  modal
-    .querySelector("#registerForm")
-    ?.addEventListener(
-      "submit",
-      handleRegister
-    );
-}
-
-/* =========================================================
-   REGISTER HANDLER
-========================================================= */
-
-async function handleRegister(event) {
-  event.preventDefault();
-
-  const form = event.currentTarget;
-
-  const username =
-    form.username.value.trim();
-
-  const fullName =
-    form.full_name.value.trim();
-
-  const phone =
-    form.phone.value.trim();
-
-  const email =
-    form.email.value.trim();
-
-  const password =
-    form.password.value;
-
-  const confirmPassword =
-    form.password_confirm.value;
-
-  const message =
-    document.getElementById(
-      "registerMessage"
-    );
-
-  const submit =
-    document.getElementById(
-      "registerSubmit"
-    );
-
-  if (password !== confirmPassword) {
-    message.className =
-      "mb-message error";
-
-    message.textContent =
-      "كلمتا المرور غير متطابقتين.";
-
-    return;
+  function fieldStyle() {
+    return `
+      width:100%;
+      box-sizing:border-box;
+      padding:12px 14px;
+      border:1px solid #dbe3ec;
+      border-radius:12px;
+      outline:none;
+      font-family:Cairo,sans-serif;
+      font-size:14px;
+      background:#fff;
+      color:#0f172a;
+    `;
   }
 
-  if (password.length < 6) {
-    message.className =
-      "mb-message error";
-
-    message.textContent =
-      "كلمة المرور يجب أن تكون 6 أحرف على الأقل.";
-
-    return;
+  function labelStyle() {
+    return `
+      display:block;
+      margin-bottom:7px;
+      color:#334155;
+      font-size:13px;
+      font-weight:700;
+    `;
   }
 
-  submit.disabled = true;
-  submit.textContent =
-    "جاري إنشاء الحساب...";
+  function primaryButtonStyle() {
+    return `
+      width:100%;
+      border:0;
+      border-radius:13px;
+      padding:13px 18px;
+      background:#0f766e;
+      color:#fff;
+      font-family:Cairo,sans-serif;
+      font-size:15px;
+      font-weight:800;
+      cursor:pointer;
+    `;
+  }
 
-  message.className =
-    "mb-message";
+  function secondaryButtonStyle() {
+    return `
+      width:100%;
+      border:1px solid #dbe3ec;
+      border-radius:13px;
+      padding:12px 18px;
+      background:#fff;
+      color:#0f766e;
+      font-family:Cairo,sans-serif;
+      font-size:14px;
+      font-weight:800;
+      cursor:pointer;
+    `;
+  }
 
-  try {
-    const data =
-      await apiFetch(
-        "/patient/register",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            username,
-            full_name: fullName,
-            phone,
-            email: email || null,
-            password
-          })
-        }
+  /* =========================================================
+     Registration
+     ========================================================= */
+
+  function openRegisterModal() {
+    const modal = createModal(
+      "registerModal",
+      "إنشاء حساب جديد",
+      `
+        <form id="registerForm">
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">اسم المستخدم</label>
+            <input
+              id="registerUsername"
+              name="username"
+              required
+              autocomplete="username"
+              placeholder="مثال: mahir123"
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">الاسم الكامل</label>
+            <input
+              id="registerFullName"
+              name="full_name"
+              required
+              autocomplete="name"
+              placeholder="الاسم الكامل"
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">رقم الهاتف</label>
+            <input
+              id="registerPhone"
+              name="phone"
+              required
+              inputmode="tel"
+              autocomplete="tel"
+              placeholder="رقم الهاتف"
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">البريد الإلكتروني <span style="font-weight:400;color:#94a3b8;">(اختياري)</span></label>
+            <input
+              id="registerEmail"
+              name="email"
+              type="email"
+              autocomplete="email"
+              placeholder="example@email.com"
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">كلمة المرور</label>
+            <input
+              id="registerPassword"
+              name="password"
+              type="password"
+              required
+              minlength="6"
+              autocomplete="new-password"
+              placeholder="6 أحرف أو أكثر"
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <div style="margin-bottom:18px;">
+            <label style="${labelStyle()}">تأكيد كلمة المرور</label>
+            <input
+              id="registerConfirmPassword"
+              name="confirm_password"
+              type="password"
+              required
+              minlength="6"
+              autocomplete="new-password"
+              placeholder="أعد كتابة كلمة المرور"
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <button type="submit" style="${primaryButtonStyle()}">
+            إنشاء الحساب
+          </button>
+
+          <div style="
+            text-align:center;
+            margin-top:15px;
+            color:#64748b;
+            font-size:13px;
+          ">
+            لديك حساب بالفعل؟
+            <button
+              type="button"
+              id="goToLogin"
+              style="
+                border:0;
+                background:none;
+                color:#0f766e;
+                font-family:inherit;
+                font-weight:800;
+                cursor:pointer;
+              "
+            >تسجيل الدخول</button>
+          </div>
+
+        </form>
+      `
+    );
+
+    $("#registerForm", modal)?.addEventListener("submit", handleRegister);
+
+    $("#goToLogin", modal)?.addEventListener("click", () => {
+      modal.remove();
+      openLoginModal();
+    });
+  }
+
+  async function handleRegister(event) {
+    event.preventDefault();
+
+    const username = $("#registerUsername")?.value.trim();
+    const fullName = $("#registerFullName")?.value.trim();
+    const phone = $("#registerPhone")?.value.trim();
+    const email = $("#registerEmail")?.value.trim();
+    const password = $("#registerPassword")?.value;
+    const confirmPassword = $("#registerConfirmPassword")?.value;
+
+    if (!username || !fullName || !phone || !password) {
+      notify("يرجى تعبئة جميع الحقول المطلوبة.", "error");
+      return;
+    }
+
+    if (password.length < 6) {
+      notify("كلمة المرور يجب أن تكون 6 أحرف على الأقل.", "error");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      notify("كلمتا المرور غير متطابقتين.", "error");
+      return;
+    }
+
+    const button = event.submitter;
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "جارٍ إنشاء الحساب...";
+    }
+
+    try {
+      const data = await api("/patient/register", {
+        method: "POST",
+        body: JSON.stringify({
+          username,
+          full_name: fullName,
+          phone,
+          email: email || null,
+          password
+        })
+      });
+
+      saveAuth(data);
+
+      document.getElementById("registerModal")?.remove();
+
+      updateAuthUI();
+
+      notify(
+        data.message || "تم إنشاء الحساب وتسجيل الدخول بنجاح.",
+        "success"
       );
-
-    saveSession(data);
-
-    message.className =
-      "mb-message success";
-
-    message.textContent =
-      "تم إنشاء الحساب بنجاح.";
-
-    setTimeout(() => {
-      removeModal();
-
-      updateAccountButtons();
-
-      showWelcomeMessage(
-        `مرحباً ${data.patient?.full_name || fullName}، تم إنشاء حسابك بنجاح.`
-      );
-    }, 700);
-
-  } catch (error) {
-    message.className =
-      "mb-message error";
-
-    message.textContent =
-      error.message ||
-      "تعذر إنشاء الحساب.";
-
-    submit.disabled = false;
-    submit.textContent =
-      "إنشاء الحساب";
-  }
-}
-
-/* =========================================================
-   LOGIN MODAL
-========================================================= */
-
-function showLoginModal() {
-  const modal = createModal(`
-    <h2 class="mb-title">تسجيل الدخول</h2>
-    <p class="mb-subtitle">
-      أدخل اسم المستخدم وكلمة المرور للدخول إلى حسابك.
-    </p>
-
-    <div class="mb-message" id="loginMessage"></div>
-
-    <form id="loginForm">
-
-      <div class="mb-form-group">
-        <label for="loginUsername">
-          اسم المستخدم
-        </label>
-        <input
-          id="loginUsername"
-          name="username"
-          type="text"
-          placeholder="اسم المستخدم"
-          autocomplete="username"
-          required
-        >
-      </div>
-
-      <div class="mb-form-group">
-        <label for="loginPassword">
-          كلمة المرور
-        </label>
-        <input
-          id="loginPassword"
-          name="password"
-          type="password"
-          placeholder="كلمة المرور"
-          autocomplete="current-password"
-          required
-        >
-      </div>
-
-      <button
-        type="submit"
-        class="mb-submit"
-        id="loginSubmit"
-      >
-        تسجيل الدخول
-      </button>
-
-    </form>
-
-    <div class="mb-switch">
-      ليس لديك حساب؟
-      <button type="button" id="switchToRegister">
-        إنشاء حساب جديد
-      </button>
-    </div>
-  `);
-
-  modal
-    .querySelector("#switchToRegister")
-    ?.addEventListener(
-      "click",
-      showRegisterModal
-    );
-
-  modal
-    .querySelector("#loginForm")
-    ?.addEventListener(
-      "submit",
-      handleLogin
-    );
-}
-
-/* =========================================================
-   LOGIN HANDLER
-========================================================= */
-
-async function handleLogin(event) {
-  event.preventDefault();
-
-  const form =
-    event.currentTarget;
-
-  const username =
-    form.username.value.trim();
-
-  const password =
-    form.password.value;
-
-  const message =
-    document.getElementById(
-      "loginMessage"
-    );
-
-  const submit =
-    document.getElementById(
-      "loginSubmit"
-    );
-
-  submit.disabled = true;
-  submit.textContent =
-    "جاري تسجيل الدخول...";
-
-  try {
-    const data =
-      await apiFetch(
-        "/patient/login",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            username,
-            password
-          })
-        }
-      );
-
-    saveSession(data);
-
-    removeModal();
-
-    updateAccountButtons();
-
-    showWelcomeMessage(
-      `مرحباً ${data.patient?.full_name || data.user?.username || ""}`
-    );
-
-  } catch (error) {
-    message.className =
-      "mb-message error";
-
-    message.textContent =
-      error.message ||
-      "تعذر تسجيل الدخول.";
-
-    submit.disabled = false;
-    submit.textContent =
-      "تسجيل الدخول";
-  }
-}
-
-/* =========================================================
-   WELCOME MESSAGE
-========================================================= */
-
-function showWelcomeMessage(text) {
-  const box =
-    document.createElement("div");
-
-  box.style.cssText = `
-    position:fixed;
-    top:85px;
-    right:20px;
-    z-index:100000;
-    background:#07527c;
-    color:#fff;
-    padding:13px 18px;
-    border-radius:12px;
-    box-shadow:0 10px 30px rgba(0,0,0,.18);
-    font-family:Cairo,sans-serif;
-    font-size:14px;
-    max-width:90%;
-  `;
-
-  box.textContent = text;
-
-  document.body.appendChild(box);
-
-  setTimeout(() => {
-    box.remove();
-  }, 3500);
-}
-
-/* =========================================================
-   ACCOUNT BUTTONS
-========================================================= */
-
-function updateAccountButtons() {
-  const loginBtn =
-    document.getElementById("loginBtn");
-
-  const signupBtn =
-    document.getElementById("signupBtn");
-
-  const user =
-    getCurrentUser();
-
-  if (!loginBtn || !signupBtn) {
-    return;
-  }
-
-  if (user) {
-    loginBtn.innerHTML =
-      "حسابي <span>♙</span>";
-
-    signupBtn.textContent =
-      "تسجيل الخروج";
-
-    loginBtn.onclick =
-      showAccountModal;
-
-    signupBtn.onclick =
-      handleLogout;
-  } else {
-    loginBtn.innerHTML =
-      "تسجيل الدخول <span>♙</span>";
-
-    signupBtn.innerHTML =
-      "إنشاء حساب <span>♙</span>";
-
-    loginBtn.onclick =
-      showLoginModal;
-
-    signupBtn.onclick =
-      showRegisterModal;
-  }
-}
-
-/* =========================================================
-   ACCOUNT MODAL
-========================================================= */
-
-function showAccountModal() {
-  const user =
-    getCurrentUser();
-
-  let patient = null;
-
-  try {
-    patient =
-      JSON.parse(
-        localStorage.getItem(
-          "medical_booking_patient"
-        ) || "null"
-      );
-  } catch {}
-
-  createModal(`
-    <h2 class="mb-title">حسابي</h2>
-
-    <div class="mb-user-box">
-      <div>
-        <strong>اسم المستخدم:</strong>
-        ${escapeHtml(user?.username || "")}
-      </div>
-
-      <div style="margin-top:7px;">
-        <strong>الاسم:</strong>
-        ${escapeHtml(patient?.full_name || "")}
-      </div>
-
-      <div style="margin-top:7px;">
-        <strong>الهاتف:</strong>
-        ${escapeHtml(patient?.phone || "")}
-      </div>
-    </div>
-
-    <button
-      class="mb-submit"
-      id="myAppointmentsBtn"
-      type="button"
-    >
-      مواعيدي
-    </button>
-  `);
-
-  document
-    .getElementById(
-      "myAppointmentsBtn"
-    )
-    ?.addEventListener(
-      "click",
-      showMyAppointments
-    );
-}
-
-/* =========================================================
-   LOGOUT
-========================================================= */
-
-async function handleLogout() {
-  try {
-    if (getToken()) {
-      await apiFetch(
-        "/logout",
-        {
-          method: "POST"
-        }
-      );
+    } catch (error) {
+      notify(error.message, "error");
+
+      if (button) {
+        button.disabled = false;
+        button.textContent = "إنشاء الحساب";
+      }
     }
-  } catch {
-    // Even if the server request fails,
-    // remove the local session.
   }
 
-  clearSession();
+  /* =========================================================
+     Login
+     ========================================================= */
 
-  updateAccountButtons();
+  function openLoginModal() {
+    const modal = createModal(
+      "loginModal",
+      "تسجيل الدخول",
+      `
+        <form id="loginForm">
 
-  showWelcomeMessage(
-    "تم تسجيل الخروج بنجاح."
-  );
-}
+          <div style="margin-bottom:15px;">
+            <label style="${labelStyle()}">اسم المستخدم</label>
+            <input
+              id="loginUsername"
+              name="username"
+              required
+              autocomplete="username"
+              placeholder="اسم المستخدم"
+              style="${fieldStyle()}"
+            >
+          </div>
 
-/* =========================================================
-   MY APPOINTMENTS
-========================================================= */
+          <div style="margin-bottom:20px;">
+            <label style="${labelStyle()}">كلمة المرور</label>
+            <input
+              id="loginPassword"
+              name="password"
+              type="password"
+              required
+              autocomplete="current-password"
+              placeholder="كلمة المرور"
+              style="${fieldStyle()}"
+            >
+          </div>
 
-async function showMyAppointments() {
-  const modal =
-    createModal(`
-      <h2 class="mb-title">مواعيدي</h2>
-      <p class="mb-subtitle">
-        جاري تحميل مواعيدك...
-      </p>
-      <div id="appointmentsContent"></div>
-    `);
+          <button type="submit" style="${primaryButtonStyle()}">
+            تسجيل الدخول
+          </button>
 
-  const content =
-    modal.querySelector(
-      "#appointmentsContent"
+          <div style="
+            text-align:center;
+            margin-top:15px;
+            color:#64748b;
+            font-size:13px;
+          ">
+            ليس لديك حساب؟
+            <button
+              type="button"
+              id="goToRegister"
+              style="
+                border:0;
+                background:none;
+                color:#0f766e;
+                font-family:inherit;
+                font-weight:800;
+                cursor:pointer;
+              "
+            >إنشاء حساب</button>
+          </div>
+
+        </form>
+      `
     );
 
-  try {
-    const data =
-      await apiFetch(
-        "/my-appointments"
+    $("#loginForm", modal)?.addEventListener("submit", handleLogin);
+
+    $("#goToRegister", modal)?.addEventListener("click", () => {
+      modal.remove();
+      openRegisterModal();
+    });
+  }
+
+  async function handleLogin(event) {
+    event.preventDefault();
+
+    const username = $("#loginUsername")?.value.trim();
+    const password = $("#loginPassword")?.value;
+
+    if (!username || !password) {
+      notify("أدخل اسم المستخدم وكلمة المرور.", "error");
+      return;
+    }
+
+    const button = event.submitter;
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "جارٍ تسجيل الدخول...";
+    }
+
+    try {
+      const data = await api("/patient/login", {
+        method: "POST",
+        body: JSON.stringify({
+          username,
+          password
+        })
+      });
+
+      saveAuth(data);
+
+      document.getElementById("loginModal")?.remove();
+
+      updateAuthUI();
+
+      notify(
+        data.message || "تم تسجيل الدخول بنجاح.",
+        "success"
       );
+    } catch (error) {
+      notify(error.message, "error");
 
-    const appointments =
-      data.appointments || [];
+      if (button) {
+        button.disabled = false;
+        button.textContent = "تسجيل الدخول";
+      }
+    }
+  }
 
-    if (!appointments.length) {
-      content.innerHTML = `
+  /* =========================================================
+     Account modal
+     ========================================================= */
+
+  async function openAccountModal() {
+    let patient = getStoredPatient();
+    const user = getStoredUser();
+
+    if (!getToken()) {
+      openLoginModal();
+      return;
+    }
+
+    try {
+      const data = await api("/patient/me");
+
+      if (data?.patient) {
+        patient = data.patient;
+        localStorage.setItem(
+          STORAGE.patient,
+          JSON.stringify(patient)
+        );
+      }
+    } catch {
+      // Use cached data if request fails.
+    }
+
+    const modal = createModal(
+      "accountModal",
+      "حسابي",
+      `
         <div style="
-          text-align:center;
-          padding:25px 5px;
-          color:#777;
+          background:linear-gradient(135deg,#f0fdfa,#ecfeff);
+          border:1px solid #ccfbf1;
+          border-radius:18px;
+          padding:20px;
+          margin-bottom:18px;
         ">
-          لا توجد مواعيد محجوزة حالياً.
+
+          <div style="
+            width:58px;
+            height:58px;
+            border-radius:50%;
+            background:#0f766e;
+            color:#fff;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:24px;
+            font-weight:800;
+            margin-bottom:12px;
+          ">
+            ${(patient?.full_name || user?.username || "م").charAt(0)}
+          </div>
+
+          <div style="
+            font-size:18px;
+            font-weight:800;
+            color:#0f172a;
+          ">
+            ${escapeHtml(patient?.full_name || user?.username || "المستخدم")}
+          </div>
+
+          <div style="
+            margin-top:5px;
+            color:#64748b;
+            font-size:13px;
+          ">
+            اسم المستخدم:
+            ${escapeHtml(
+              patient?.username ||
+              user?.username ||
+              ""
+            )}
+          </div>
+
+          ${
+            patient?.phone
+              ? `
+                <div style="
+                  margin-top:5px;
+                  color:#64748b;
+                  font-size:13px;
+                ">
+                  الهاتف: ${escapeHtml(patient.phone)}
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            patient?.email
+              ? `
+                <div style="
+                  margin-top:5px;
+                  color:#64748b;
+                  font-size:13px;
+                ">
+                  البريد: ${escapeHtml(patient.email)}
+                </div>
+              `
+              : ""
+          }
+
+        </div>
+
+        <div style="display:grid;gap:10px;">
+
+          <button
+            type="button"
+            id="myAppointmentsBtn"
+            style="${primaryButtonStyle()}"
+          >
+            📅 مواعيدي
+          </button>
+
+          <button
+            type="button"
+            id="logoutBtn"
+            style="
+              ${secondaryButtonStyle()}
+              color:#dc2626;
+              border-color:#fecaca;
+            "
+          >
+            تسجيل الخروج
+          </button>
+
+        </div>
+      `
+    );
+
+    $("#myAppointmentsBtn", modal)?.addEventListener(
+      "click",
+      async () => {
+        modal.remove();
+        await openMyAppointments();
+      }
+    );
+
+    $("#logoutBtn", modal)?.addEventListener(
+      "click",
+      logout
+    );
+  }
+
+  async function logout() {
+    try {
+      if (getToken()) {
+        await api("/logout", {
+          method: "POST"
+        });
+      }
+    } catch {
+      // Clear local session anyway.
+    }
+
+    clearAuth();
+
+    document
+      .querySelectorAll(
+        "#accountModal,#loginModal,#registerModal,#appointmentsModal,#bookingModal"
+      )
+      .forEach((element) => element.remove());
+
+    updateAuthUI();
+
+    notify("تم تسجيل الخروج.", "success");
+  }
+
+  /* =========================================================
+     Authentication UI
+     ========================================================= */
+
+  function updateAuthUI() {
+    const token = getToken();
+    const user = getStoredUser();
+    const patient = getStoredPatient();
+
+    const loginBtn = document.getElementById("loginBtn");
+    const signupBtn = document.getElementById("signupBtn");
+
+    if (!loginBtn && !signupBtn) {
+      return;
+    }
+
+    if (token) {
+      if (loginBtn) {
+        loginBtn.textContent = "حسابي";
+        loginBtn.onclick = (event) => {
+          event.preventDefault();
+          openAccountModal();
+        };
+      }
+
+      if (signupBtn) {
+        signupBtn.textContent = "مواعيدي";
+        signupBtn.onclick = async (event) => {
+          event.preventDefault();
+          await openMyAppointments();
+        };
+      }
+
+      const name =
+        patient?.full_name ||
+        user?.full_name ||
+        user?.username ||
+        "";
+
+      if (name && loginBtn) {
+        loginBtn.setAttribute("title", name);
+      }
+    } else {
+      if (loginBtn) {
+        loginBtn.textContent = "تسجيل الدخول";
+        loginBtn.onclick = (event) => {
+          event.preventDefault();
+          openLoginModal();
+        };
+      }
+
+      if (signupBtn) {
+        signupBtn.textContent = "إنشاء حساب";
+        signupBtn.onclick = (event) => {
+          event.preventDefault();
+          openRegisterModal();
+        };
+      }
+    }
+  }
+
+  /* =========================================================
+     Services
+     ========================================================= */
+
+  async function loadServices() {
+    try {
+      const data = await api("/services");
+
+      services =
+        Array.isArray(data)
+          ? data
+          : Array.isArray(data?.services)
+            ? data.services
+            : [];
+
+      return services;
+    } catch (error) {
+      console.error("Failed to load services:", error);
+      services = [];
+      return [];
+    }
+  }
+
+  /* =========================================================
+     Doctors - DYNAMIC
+     ========================================================= */
+
+  async function loadDoctors() {
+    try {
+      const data = await api("/doctors");
+
+      doctors =
+        Array.isArray(data)
+          ? data
+          : Array.isArray(data?.doctors)
+            ? data.doctors
+            : [];
+
+      renderDoctors(doctors);
+      return doctors;
+    } catch (error) {
+      console.error("Failed to load doctors:", error);
+
+      doctors = [];
+
+      renderDoctors([]);
+
+      return [];
+    }
+  }
+
+  function doctorImage(doctor) {
+    if (doctor?.image_url) {
+      return doctor.image_url;
+    }
+
+    return "doctor-reference.jpg";
+  }
+
+  function doctorInitials(name) {
+    const parts = String(name || "طبيب")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    if (parts.length >= 2) {
+      return (
+        parts[0].charAt(0) +
+        parts[1].charAt(0)
+      );
+    }
+
+    return parts[0]?.charAt(0) || "ط";
+  }
+
+  function createDoctorCard(doctor) {
+    const name = doctor.full_name || "طبيب";
+    const specialty = doctor.specialty || "تخصص طبي";
+    const area = doctor.area || "";
+    const image = doctorImage(doctor);
+
+    /*
+      نستخدم نفس doctor-card الموجودة في التصميم الحالي.
+      إذا كانت styles.css تحتوي على التصميم، سيتم الاحتفاظ به.
+    */
+
+    const card = document.createElement("article");
+
+    card.className = "doctor-card";
+
+    card.dataset.id = doctor.id || "";
+    card.dataset.doctorId = doctor.id || "";
+    card.dataset.name = name;
+    card.dataset.specialty = specialty;
+    card.dataset.area = area;
+
+    card.innerHTML = `
+      <div class="doctor-image-wrap" style="position:relative;">
+        <img
+          src="${escapeHtml(image)}"
+          alt="${escapeHtml(name)}"
+          class="doctor-image"
+          loading="lazy"
+          onerror="this.onerror=null;this.src='doctor-reference.jpg';"
+        >
+
+        <div style="
+          position:absolute;
+          top:12px;
+          right:12px;
+          width:42px;
+          height:42px;
+          border-radius:50%;
+          background:rgba(15,118,110,.92);
+          color:#fff;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          font-weight:800;
+          font-size:15px;
+        ">
+          ${escapeHtml(doctorInitials(name))}
+        </div>
+      </div>
+
+      <div class="doctor-info">
+
+        <h3 class="doctor-name">
+          ${escapeHtml(name)}
+        </h3>
+
+        <p class="doctor-specialty">
+          ${escapeHtml(specialty)}
+        </p>
+
+        ${
+          area
+            ? `
+              <p class="doctor-area">
+                📍 ${escapeHtml(area)}
+              </p>
+            `
+            : ""
+        }
+
+        ${
+          doctor.bio
+            ? `
+              <p class="doctor-bio">
+                ${escapeHtml(doctor.bio)}
+              </p>
+            `
+            : ""
+        }
+
+        <div class="doctor-meta" style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          margin-top:10px;
+        ">
+          <span class="doctor-rating">
+            ⭐ ${doctor.rating || "4.8"}
+          </span>
+
+          ${
+            doctor.available === false
+              ? `
+                <span style="
+                  color:#dc2626;
+                  font-size:12px;
+                  font-weight:700;
+                ">
+                  غير متاح حاليًا
+                </span>
+              `
+              : `
+                <span style="
+                  color:#16a34a;
+                  font-size:12px;
+                  font-weight:700;
+                ">
+                  ● متاح للحجز
+                </span>
+              `
+          }
+        </div>
+
+        <button
+          type="button"
+          class="book"
+          data-doctor-id="${escapeHtml(doctor.id || "")}"
+        >
+          احجز الآن
+        </button>
+
+      </div>
+    `;
+
+    return card;
+  }
+
+  function findDoctorsContainer() {
+    /*
+      البحث عن القسم الموجود في index.html
+      دون تغيير التصميم.
+    */
+
+    const section =
+      document.getElementById("doctors");
+
+    if (!section) return null;
+
+    return (
+      section.querySelector(".doctors-grid") ||
+      section.querySelector(".doctors-container") ||
+      section.querySelector(".doctor-list") ||
+      section.querySelector(".cards") ||
+      section.querySelector(".grid") ||
+      section.querySelector(".doctors") ||
+      (() => {
+        const children = Array.from(section.children);
+
+        for (const child of children) {
+          if (
+            child.querySelector?.(".doctor-card") ||
+            child.classList.contains("doctor-card")
+          ) {
+            return child;
+          }
+        }
+
+        return null;
+      })()
+    );
+  }
+
+  function renderDoctors(list) {
+    const section = document.getElementById("doctors");
+
+    if (!section) {
+      return;
+    }
+
+    let container = findDoctorsContainer();
+
+    /*
+      إذا كان التصميم الحالي لا يحتوي على حاوية واضحة
+      للأطباء، نستخدم أول عنصر يحتوي البطاقات.
+    */
+
+    if (!container) {
+      container = document.createElement("div");
+
+      container.className = "doctors-grid";
+
+      const heading =
+        section.querySelector("h2,h3");
+
+      if (heading && heading.parentElement) {
+        heading.parentElement.appendChild(container);
+      } else {
+        section.appendChild(container);
+      }
+    }
+
+    /*
+      إزالة البطاقات القديمة فقط.
+      بقية القسم والتصميم لا يتم تغييره.
+    */
+    $$(".doctor-card", container).forEach(
+      (card) => card.remove()
+    );
+
+    if (!list.length) {
+      container.innerHTML = `
+        <div style="
+          grid-column:1/-1;
+          text-align:center;
+          padding:35px 15px;
+          color:#64748b;
+          font-family:Cairo,sans-serif;
+        ">
+          <div style="font-size:38px;margin-bottom:8px;">👨‍⚕️</div>
+          <div style="font-weight:800;color:#334155;">
+            لا توجد أطباء متاحون حاليًا
+          </div>
+          <div style="font-size:13px;margin-top:5px;">
+            سيتم عرض الأطباء هنا عند إضافتهم من لوحة الإدارة.
+          </div>
         </div>
       `;
 
       return;
     }
 
-    content.innerHTML =
-      appointments.map(
-        appointment => `
-          <div style="
-            border:1px solid #e1e7eb;
-            border-radius:14px;
-            padding:14px;
-            margin-bottom:10px;
-            background:#fafcfd;
-          ">
-            <strong style="color:#07527c;">
-              ${escapeHtml(
-                appointment.service_name ||
-                "موعد طبي"
-              )}
-            </strong>
+    const fragment = document.createDocumentFragment();
 
-            <div style="
-              margin-top:7px;
-              color:#555;
-              font-size:13px;
-            ">
-              التاريخ:
-              ${escapeHtml(
-                appointment.appointment_date || ""
-              )}
-            </div>
+    list.forEach((doctor) => {
+      fragment.appendChild(
+        createDoctorCard(doctor)
+      );
+    });
 
-            <div style="
-              margin-top:4px;
-              color:#555;
-              font-size:13px;
-            ">
-              الوقت:
-              ${escapeHtml(
-                appointment.appointment_time || ""
-              )}
-            </div>
+    container.appendChild(fragment);
 
-            <div style="
-              margin-top:7px;
-              font-weight:700;
-              color:${getStatusColor(
-                appointment.status
-              )};
-            ">
-              ${getStatusText(
-                appointment.status
-              )}
-            </div>
-          </div>
-        `
-      ).join("");
-
-  } catch (error) {
-    content.innerHTML = `
-      <div class="mb-message error" style="display:block;">
-        ${escapeHtml(
-          error.message ||
-          "تعذر تحميل المواعيد."
-        )}
-      </div>
-    `;
-  }
-}
-
-/* =========================================================
-   STATUS
-========================================================= */
-
-function getStatusText(status) {
-  const statuses = {
-    pending: "قيد الانتظار",
-    confirmed: "تم تأكيد الموعد",
-    cancelled: "تم إلغاء الموعد"
-  };
-
-  return (
-    statuses[status] ||
-    status ||
-    "غير معروف"
-  );
-}
-
-function getStatusColor(status) {
-  if (status === "confirmed") {
-    return "#067647";
+    bindDoctorButtons();
   }
 
-  if (status === "cancelled") {
-    return "#b42318";
+  function bindDoctorButtons() {
+    $$(".doctor-card .book").forEach((button) => {
+      if (button.dataset.bound === "1") {
+        return;
+      }
+
+      button.dataset.bound = "1";
+
+      button.addEventListener("click", () => {
+        const doctorId =
+          button.dataset.doctorId;
+
+        const doctor =
+          doctors.find(
+            (item) =>
+              String(item.id) ===
+              String(doctorId)
+          );
+
+        if (!doctor) {
+          notify(
+            "تعذر العثور على بيانات الطبيب.",
+            "error"
+          );
+          return;
+        }
+
+        selectedDoctor = doctor;
+
+        openBookingModal(doctor);
+      });
+    });
   }
 
-  return "#b54708";
-}
+  /* =========================================================
+     Doctor search
+     ========================================================= */
 
-/* =========================================================
-   BOOKING
-========================================================= */
+  function filterDoctors() {
+    const nameInput =
+      document.getElementById("searchName");
 
-document.querySelectorAll(".book").forEach(btn => {
-  btn.addEventListener("click", async event => {
-    event.preventDefault();
+    const areaInput =
+      document.getElementById("area");
 
-    const card =
-      btn.closest(".doctor-card");
+    const specialtyInput =
+      document.getElementById("specialty");
 
-    const doctorName =
-      card?.dataset.name || "";
+    const name =
+      nameInput?.value.trim().toLowerCase() || "";
 
-    const doctorSpecialty =
-      card?.dataset.specialty || "";
+    const area =
+      areaInput?.value.trim().toLowerCase() || "";
+
+    const specialty =
+      specialtyInput?.value.trim().toLowerCase() || "";
+
+    const filtered = doctors.filter((doctor) => {
+      const doctorName =
+        String(doctor.full_name || "")
+          .toLowerCase();
+
+      const doctorSpecialty =
+        String(doctor.specialty || "")
+          .toLowerCase();
+
+      const doctorArea =
+        String(doctor.area || "")
+          .toLowerCase();
+
+      const matchName =
+        !name ||
+        doctorName.includes(name);
+
+      const matchSpecialty =
+        !specialty ||
+        doctorSpecialty.includes(specialty);
+
+      const matchArea =
+        !area ||
+        doctorArea.includes(area);
+
+      return (
+        matchName &&
+        matchSpecialty &&
+        matchArea
+      );
+    });
+
+    renderDoctors(filtered);
+
+    const results =
+      document.getElementById("searchResults");
+
+    if (results) {
+      results.textContent =
+        filtered.length
+          ? `تم العثور على ${filtered.length} طبيب.`
+          : "لم يتم العثور على أطباء مطابقين للبحث.";
+    }
+
+    const doctorsSection =
+      document.getElementById("doctors");
+
+    if (
+      doctorsSection &&
+      filtered.length
+    ) {
+      doctorsSection.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }
+  }
+
+  function setupSearch() {
+    const form =
+      document.getElementById("searchForm");
+
+    if (form) {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        filterDoctors();
+      });
+    }
+
+    [
+      "searchName",
+      "area",
+      "specialty"
+    ].forEach((id) => {
+      const input =
+        document.getElementById(id);
+
+      if (!input) return;
+
+      input.addEventListener("input", () => {
+        /*
+          البحث أثناء الكتابة بدون إجبار المستخدم
+          على إعادة تحميل الصفحة.
+        */
+        filterDoctors();
+      });
+    });
+  }
+
+  /* =========================================================
+     Specialty cards
+     ========================================================= */
+
+  function setupSpecialties() {
+    $$("[data-specialty]").forEach((card) => {
+      if (card.dataset.specialtyBound === "1") {
+        return;
+      }
+
+      card.dataset.specialtyBound = "1";
+
+      card.addEventListener("click", () => {
+        const specialty =
+          card.dataset.specialty || "";
+
+        const specialtyInput =
+          document.getElementById("specialty");
+
+        if (specialtyInput) {
+          specialtyInput.value =
+            specialty;
+        }
+
+        filterDoctors();
+      });
+    });
+  }
+
+  /* =========================================================
+     Booking
+     ========================================================= */
+
+  async function openBookingModal(doctor = null) {
+    selectedDoctor = doctor || null;
 
     if (!getToken()) {
-      showLoginModal();
-
-      showWelcomeMessage(
-        "يرجى تسجيل الدخول أولاً لحجز موعد."
+      notify(
+        "يجب تسجيل الدخول أولًا لحجز موعد.",
+        "error"
       );
 
+      openLoginModal();
       return;
     }
 
-    await showBookingModal(
-      doctorName,
-      doctorSpecialty
+    if (!services.length) {
+      await loadServices();
+    }
+
+    const serviceOptions = services
+      .filter((service) => service.active !== false)
+      .map(
+        (service) => `
+          <option value="${escapeHtml(service.id)}">
+            ${escapeHtml(service.name)}
+            ${
+              service.price !== null &&
+              service.price !== undefined &&
+              service.price !== ""
+                ? ` — ${escapeHtml(service.price)}`
+                : ""
+            }
+          </option>
+        `
+      )
+      .join("");
+
+    if (!serviceOptions) {
+      notify(
+        "لا توجد خدمات متاحة للحجز حاليًا.",
+        "error"
+      );
+      return;
+    }
+
+    const doctorBox = selectedDoctor
+      ? `
+        <div style="
+          display:flex;
+          align-items:center;
+          gap:12px;
+          padding:13px;
+          border-radius:15px;
+          background:#f0fdfa;
+          border:1px solid #ccfbf1;
+          margin-bottom:17px;
+        ">
+
+          <img
+            src="${escapeHtml(doctorImage(selectedDoctor))}"
+            alt="${escapeHtml(selectedDoctor.full_name)}"
+            style="
+              width:55px;
+              height:55px;
+              border-radius:14px;
+              object-fit:cover;
+            "
+            onerror="this.onerror=null;this.src='doctor-reference.jpg';"
+          >
+
+          <div>
+            <div style="
+              font-weight:800;
+              color:#0f172a;
+              font-size:16px;
+            ">
+              ${escapeHtml(selectedDoctor.full_name)}
+            </div>
+
+            <div style="
+              color:#0f766e;
+              font-size:13px;
+              margin-top:3px;
+            ">
+              ${escapeHtml(selectedDoctor.specialty || "تخصص طبي")}
+            </div>
+
+            ${
+              selectedDoctor.area
+                ? `
+                  <div style="
+                    color:#64748b;
+                    font-size:12px;
+                    margin-top:2px;
+                  ">
+                    📍 ${escapeHtml(selectedDoctor.area)}
+                  </div>
+                `
+                : ""
+            }
+          </div>
+
+        </div>
+      `
+      : `
+        <div style="
+          padding:13px;
+          border-radius:14px;
+          background:#f8fafc;
+          color:#64748b;
+          font-size:13px;
+          margin-bottom:17px;
+        ">
+          لم يتم اختيار طبيب محدد.
+        </div>
+      `;
+
+    const modal = createModal(
+      "bookingModal",
+      "حجز موعد طبي",
+      `
+        ${doctorBox}
+
+        <form id="bookingForm">
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">
+              الخدمة الطبية
+            </label>
+
+            <select
+              id="bookingService"
+              required
+              style="${fieldStyle()}"
+            >
+              <option value="">اختر الخدمة</option>
+              ${serviceOptions}
+            </select>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">
+              تاريخ الموعد
+            </label>
+
+            <input
+              id="bookingDate"
+              type="date"
+              required
+              min="${new Date().toISOString().split("T")[0]}"
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">
+              وقت الموعد
+            </label>
+
+            <input
+              id="bookingTime"
+              type="time"
+              required
+              style="${fieldStyle()}"
+            >
+          </div>
+
+          <div style="margin-bottom:19px;">
+            <label style="${labelStyle()}">
+              ملاحظات <span style="font-weight:400;color:#94a3b8;">(اختياري)</span>
+            </label>
+
+            <textarea
+              id="bookingNotes"
+              rows="3"
+              placeholder="أي ملاحظات ترغب في إضافتها..."
+              style="${fieldStyle()}resize:vertical;"
+            ></textarea>
+          </div>
+
+          <button
+            type="submit"
+            style="${primaryButtonStyle()}"
+          >
+            تأكيد حجز الموعد
+          </button>
+
+        </form>
+      `,
+      "560px"
     );
-  });
-});
 
-/* =========================================================
-   BOOKING MODAL
-========================================================= */
-
-async function showBookingModal(
-  doctorName = "",
-  doctorSpecialty = ""
-) {
-  let services = [];
-
-  try {
-    const data =
-      await apiFetch("/services");
-
-    services =
-      data.services || [];
-  } catch (error) {
-    showWelcomeMessage(
-      error.message ||
-      "تعذر تحميل الخدمات."
+    $("#bookingForm", modal)?.addEventListener(
+      "submit",
+      handleBooking
     );
-
-    return;
   }
 
-  const modal =
-    createModal(`
-      <h2 class="mb-title">
-        حجز موعد
-      </h2>
+  async function handleBooking(event) {
+    event.preventDefault();
 
-      <p class="mb-subtitle">
-        ${doctorName
-          ? `الطبيب: ${escapeHtml(doctorName)}`
-          : "اختر تفاصيل الموعد"}
-      </p>
+    const serviceId =
+      $("#bookingService")?.value;
 
-      <div class="mb-message" id="bookingMessage"></div>
+    const date =
+      $("#bookingDate")?.value;
 
-      <form id="bookingForm">
+    const time =
+      $("#bookingTime")?.value;
 
-        <div class="mb-form-group">
-          <label>
-            الخدمة الطبية
-          </label>
+    const notes =
+      $("#bookingNotes")?.value.trim() || "";
 
-          <select
-            id="bookingService"
-            required
-          >
-            <option value="">
-              اختر الخدمة
-            </option>
+    if (!serviceId || !date || !time) {
+      notify(
+        "يرجى اختيار الخدمة والتاريخ والوقت.",
+        "error"
+      );
+      return;
+    }
 
-            ${services.map(
-              service => `
-                <option value="${escapeHtml(
-                  service.id
-                )}">
-                  ${escapeHtml(
-                    service.name
-                  )}
-                  ${
-                    service.price != null
-                      ? ` - ${escapeHtml(
-                          String(service.price)
-                        )}`
-                      : ""
-                  }
-                </option>
-              `
-            ).join("")}
-          </select>
-        </div>
+    const button = event.submitter;
 
-        <div class="mb-form-group">
-          <label>
-            التاريخ
-          </label>
+    if (button) {
+      button.disabled = true;
+      button.textContent = "جارٍ تأكيد الحجز...";
+    }
 
-          <input
-            id="bookingDate"
-            type="date"
-            required
-          >
-        </div>
+    try {
+      const data = await api("/appointments", {
+        method: "POST",
+        body: JSON.stringify({
+          service_id: serviceId,
 
-        <div class="mb-form-group">
-          <label>
-            الوقت
-          </label>
+          /*
+            أهم إضافة:
+            إرسال ID الطبيب الحقيقي من قاعدة البيانات.
+          */
+          doctor_id:
+            selectedDoctor?.id ||
+            null,
 
-          <input
-            id="bookingTime"
-            type="time"
-            required
-          >
-        </div>
+          appointment_date: date,
+          appointment_time: time,
+          notes
+        })
+      });
 
-        <div class="mb-form-group">
-          <label>
-            ملاحظات
-            <span style="font-weight:400;color:#999;">
-              (اختياري)
-            </span>
-          </label>
+      document
+        .getElementById("bookingModal")
+        ?.remove();
 
-          <textarea
-            id="bookingNotes"
-            rows="3"
-            placeholder="أي ملاحظات ترغب في إضافتها..."
-          ></textarea>
-        </div>
+      notify(
+        data.message ||
+          "تم إرسال طلب حجز الموعد بنجاح.",
+        "success"
+      );
 
-        <button
-          type="submit"
-          class="mb-submit"
-          id="bookingSubmit"
-        >
-          تأكيد طلب الحجز
-        </button>
+      selectedDoctor = null;
 
-      </form>
-    `);
+      /*
+        تحديث المواعيد تلقائيًا في حال فتحها لاحقًا.
+      */
+    } catch (error) {
+      notify(
+        error.message ||
+          "تعذر حجز الموعد.",
+        "error"
+      );
 
-  const dateInput =
-    modal.querySelector(
-      "#bookingDate"
-    );
+      if (button) {
+        button.disabled = false;
+        button.textContent =
+          "تأكيد حجز الموعد";
+      }
+    }
+  }
 
-  const today =
-    new Date()
-      .toISOString()
-      .slice(0, 10);
+  /* =========================================================
+     My appointments
+     ========================================================= */
 
-  dateInput.min = today;
+  async function openMyAppointments() {
+    if (!getToken()) {
+      openLoginModal();
+      return;
+    }
 
-  modal
-    .querySelector("#bookingForm")
-    ?.addEventListener(
-      "submit",
-      async event => {
-        event.preventDefault();
+    let appointments = [];
 
-        const message =
-          modal.querySelector(
-            "#bookingMessage"
+    try {
+      const data =
+        await api("/my-appointments");
+
+      appointments =
+        Array.isArray(data)
+          ? data
+          : Array.isArray(data?.appointments)
+            ? data.appointments
+            : [];
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuth();
+        updateAuthUI();
+        openLoginModal();
+        notify(
+          "انتهت جلسة الدخول، يرجى تسجيل الدخول مرة أخرى.",
+          "error"
+        );
+        return;
+      }
+
+      notify(
+        error.message,
+        "error"
+      );
+      return;
+    }
+
+    const statusLabel = (status) => {
+      switch (status) {
+        case "confirmed":
+          return {
+            text: "مؤكد",
+            bg: "#dcfce7",
+            color: "#166534"
+          };
+
+        case "cancelled":
+          return {
+            text: "ملغي",
+            bg: "#fee2e2",
+            color: "#991b1b"
+          };
+
+        case "completed":
+          return {
+            text: "مكتمل",
+            bg: "#e0e7ff",
+            color: "#3730a3"
+          };
+
+        default:
+          return {
+            text: "في انتظار التأكيد",
+            bg: "#fef3c7",
+            color: "#92400e"
+          };
+      }
+    };
+
+    const cards = appointments
+      .map((appointment) => {
+        const status =
+          statusLabel(
+            appointment.status
           );
 
-        const submit =
-          modal.querySelector(
-            "#bookingSubmit"
-          );
+        const doctorName =
+          appointment.doctor_name ||
+          appointment.doctor?.full_name ||
+          "لم يتم تحديد طبيب";
 
-        const serviceId =
-          modal.querySelector(
-            "#bookingService"
-          ).value;
+        const serviceName =
+          appointment.service_name ||
+          appointment.service?.name ||
+          "خدمة طبية";
 
-        const date =
-          modal.querySelector(
-            "#bookingDate"
-          ).value;
+        return `
+          <div style="
+            border:1px solid #e2e8f0;
+            border-radius:17px;
+            padding:16px;
+            margin-bottom:12px;
+            background:#fff;
+          ">
 
-        const time =
-          modal.querySelector(
-            "#bookingTime"
-          ).value;
+            <div style="
+              display:flex;
+              align-items:flex-start;
+              justify-content:space-between;
+              gap:10px;
+              margin-bottom:10px;
+            ">
 
-        const notes =
-          modal.querySelector(
-            "#bookingNotes"
-          ).value.trim();
+              <div>
+                <div style="
+                  font-size:16px;
+                  font-weight:800;
+                  color:#0f172a;
+                ">
+                  ${escapeHtml(serviceName)}
+                </div>
 
-        submit.disabled = true;
-        submit.textContent =
-          "جاري إرسال طلب الحجز...";
-
-        try {
-          const data =
-            await apiFetch(
-              "/appointments",
-              {
-                method: "POST",
-                body: JSON.stringify({
-                  service_id: serviceId,
-                  doctor_id: null,
-                  appointment_date: date,
-                  appointment_time: time,
-                  notes
-                })
-              }
-            );
-
-          modal.querySelector(
-            ".mb-modal"
-          ).innerHTML = `
-            <button
-              class="mb-close"
-              id="mbClose"
-            >
-              ×
-            </button>
-
-            <div class="mb-appointment-success">
-
-              <div class="mb-success-icon">
-                ✓
+                <div style="
+                  margin-top:4px;
+                  color:#0f766e;
+                  font-size:13px;
+                  font-weight:700;
+                ">
+                  👨‍⚕️ ${escapeHtml(doctorName)}
+                </div>
               </div>
 
-              <h3>
-                تم إرسال طلب الحجز
-              </h3>
-
-              <p>
-                تم استلام طلب موعدك بنجاح.
-                سيظهر الموعد في حسابك بعد إرساله.
-              </p>
-
-              <button
-                class="mb-submit"
-                id="closeBookingSuccess"
-                type="button"
-              >
-                حسناً
-              </button>
+              <span style="
+                display:inline-block;
+                white-space:nowrap;
+                background:${status.bg};
+                color:${status.color};
+                padding:5px 9px;
+                border-radius:20px;
+                font-size:11px;
+                font-weight:800;
+              ">
+                ${status.text}
+              </span>
 
             </div>
-          `;
 
-          modal
-            .querySelector("#mbClose")
-            ?.addEventListener(
-              "click",
-              removeModal
-            );
+            <div style="
+              display:grid;
+              grid-template-columns:1fr 1fr;
+              gap:8px;
+              color:#64748b;
+              font-size:13px;
+            ">
 
-          modal
-            .querySelector(
-              "#closeBookingSuccess"
-            )
-            ?.addEventListener(
-              "click",
-              removeModal
-            );
+              <div>
+                📅 ${escapeHtml(
+                  appointment.appointment_date || ""
+                )}
+              </div>
 
-        } catch (error) {
-          message.className =
-            "mb-message error";
+              <div>
+                🕐 ${escapeHtml(
+                  appointment.appointment_time || ""
+                )}
+              </div>
 
-          message.textContent =
-            error.message ||
-            "تعذر إرسال طلب الحجز.";
+            </div>
 
-          submit.disabled = false;
-          submit.textContent =
-            "تأكيد طلب الحجز";
-        }
-      }
+            ${
+              appointment.notes
+                ? `
+                  <div style="
+                    margin-top:10px;
+                    padding-top:10px;
+                    border-top:1px solid #f1f5f9;
+                    color:#64748b;
+                    font-size:12px;
+                  ">
+                    ملاحظات:
+                    ${escapeHtml(appointment.notes)}
+                  </div>
+                `
+                : ""
+            }
+
+          </div>
+        `;
+      })
+      .join("");
+
+    createModal(
+      "appointmentsModal",
+      "مواعيدي",
+      appointments.length
+        ? cards
+        : `
+          <div style="
+            text-align:center;
+            padding:35px 10px;
+            color:#64748b;
+          ">
+            <div style="font-size:45px;margin-bottom:10px;">
+              📅
+            </div>
+
+            <div style="
+              color:#334155;
+              font-weight:800;
+              font-size:17px;
+            ">
+              لا توجد مواعيد حتى الآن
+            </div>
+
+            <div style="
+              margin-top:6px;
+              font-size:13px;
+            ">
+              يمكنك اختيار طبيب والبدء بحجز موعدك.
+            </div>
+          </div>
+        `,
+      "650px"
     );
-}
-
-/* =========================================================
-   ESCAPE HTML
-========================================================= */
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/* =========================================================
-   INITIALIZE
-========================================================= */
-
-document.addEventListener(
-  "DOMContentLoaded",
-  () => {
-    updateAccountButtons();
   }
-);
+
+  /* =========================================================
+     Navigation
+     ========================================================= */
+
+  function setupNavigation() {
+    $$("a[href^='#']").forEach((link) => {
+      if (link.dataset.navBound === "1") {
+        return;
+      }
+
+      link.dataset.navBound = "1";
+
+      link.addEventListener("click", (event) => {
+        const href =
+          link.getAttribute("href");
+
+        if (
+          !href ||
+          href === "#" ||
+          href.length < 2
+        ) {
+          return;
+        }
+
+        const target =
+          document.querySelector(href);
+
+        if (target) {
+          event.preventDefault();
+
+          target.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+          });
+        }
+      });
+    });
+  }
+
+  /* =========================================================
+     Existing book buttons
+     Handles any static cards temporarily present
+     ========================================================= */
+
+  function bindExistingStaticBookButtons() {
+    $$(".doctor-card .book").forEach((button) => {
+      if (button.dataset.bound === "1") {
+        return;
+      }
+
+      button.dataset.bound = "1";
+
+      button.addEventListener("click", () => {
+        const doctorId =
+          button.dataset.doctorId ||
+          button.closest(".doctor-card")
+            ?.dataset?.id;
+
+        const doctor =
+          doctors.find(
+            (item) =>
+              String(item.id) ===
+              String(doctorId)
+          );
+
+        if (doctor) {
+          selectedDoctor = doctor;
+          openBookingModal(doctor);
+          return;
+        }
+
+        /*
+          في حال كانت بطاقة قديمة ولم تحصل على ID بعد،
+          نفتح الحجز بدون طبيب محدد بدل تعطيل الزر.
+        */
+        selectedDoctor = null;
+        openBookingModal(null);
+      });
+    });
+  }
+
+  /* =========================================================
+     Mobile menu compatibility
+     ========================================================= */
+
+  function setupMobileMenu() {
+    const menuBtn =
+      document.getElementById("menuBtn");
+
+    const mobileMenu =
+      document.getElementById("mobileMenu");
+
+    if (!menuBtn || !mobileMenu) {
+      return;
+    }
+
+    menuBtn.addEventListener("click", () => {
+      mobileMenu.classList.toggle("active");
+    });
+
+    $$("#mobileMenu a").forEach((link) => {
+      link.addEventListener("click", () => {
+        mobileMenu.classList.remove("active");
+      });
+    });
+  }
+
+  /* =========================================================
+     Hero / existing buttons compatibility
+     ========================================================= */
+
+  function setupHeroButtons() {
+    const heroBookingBtn =
+      document.getElementById(
+        "heroBookingBtn"
+      );
+
+    if (heroBookingBtn) {
+      heroBookingBtn.addEventListener(
+        "click",
+        () => {
+          const doctorsSection =
+            document.getElementById(
+              "doctors"
+            );
+
+          if (doctorsSection) {
+            doctorsSection.scrollIntoView({
+              behavior: "smooth",
+              block: "start"
+            });
+          }
+        }
+      );
+    }
+  }
+
+  /* =========================================================
+     Search button compatibility
+     ========================================================= */
+
+  function setupSearchButtonCompatibility() {
+    const searchBtn =
+      document.getElementById("searchBtn");
+
+    if (searchBtn) {
+      searchBtn.addEventListener("click", () => {
+        filterDoctors();
+      });
+    }
+  }
+
+  /* =========================================================
+     Init
+     ========================================================= */
+
+  async function init() {
+    updateAuthUI();
+
+    setupNavigation();
+    setupSearch();
+    setupSpecialties();
+    setupMobileMenu();
+    setupHeroButtons();
+    setupSearchButtonCompatibility();
+
+    /*
+      تحميل الخدمات والأطباء بالتوازي.
+    */
+    await Promise.all([
+      loadServices(),
+      loadDoctors()
+    ]);
+
+    /*
+      للتوافق مع أي بطاقات موجودة مؤقتًا في HTML.
+    */
+    bindExistingStaticBookButtons();
+
+    /*
+      عند وجود جلسة دخول، نحاول تحديث بيانات المريض.
+    */
+    if (getToken()) {
+      try {
+        const data =
+          await api("/patient/me");
+
+        if (data?.patient) {
+          localStorage.setItem(
+            STORAGE.patient,
+            JSON.stringify(data.patient)
+          );
+        }
+      } catch {
+        // لا نوقف الصفحة إذا فشل التحديث.
+      }
+    }
+
+    updateAuthUI();
+
+    console.log(
+      "Medical Booking initialized successfully."
+    );
+
+    console.log(
+      `Dynamic doctors loaded: ${doctors.length}`
+    );
+  }
+
+  /* =========================================================
+     Start
+     ========================================================= */
+
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      init
+    );
+  } else {
+    init();
+  }
+
+})();
