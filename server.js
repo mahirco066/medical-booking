@@ -579,75 +579,78 @@ async function createIndexes() {
    DEFAULT SERVICES
 ========================================================= */
 
+```js
 async function seedServices() {
   const services = [
     {
-      name: "كشف طبي",
-      description: "استشارة وفحص طبي عام.",
-      duration: 30
+      name: "كشف عام",
+      description: "كشف واستشارة طبية عامة",
+      duration_minutes: 30,
+      price: 0
     },
     {
       name: "متابعة الحمل",
-      description: "متابعة دورية للحمل.",
-      duration: 30
+      description: "متابعة الحمل والفحوصات الدورية",
+      duration_minutes: 30,
+      price: 0
     },
     {
-      name: "سونار الحمل",
-      description: "فحص ومتابعة الحمل بالموجات فوق الصوتية.",
-      duration: 30
+      name: "سونار",
+      description: "فحص بالموجات فوق الصوتية",
+      duration_minutes: 30,
+      price: 0
     },
     {
       name: "كشف نساء",
-      description: "فحص واستشارة في أمراض النساء.",
-      duration: 30
+      description: "فحص واستشارة في أمراض النساء",
+      duration_minutes: 30,
+      price: 0
     },
     {
-      name: "تأخر الإنجاب",
-      description: "استشارة ومتابعة حالات تأخر الإنجاب.",
-      duration: 45
+      name: "طب الأطفال",
+      description: "كشف واستشارة للأطفال",
+      duration_minutes: 30,
+      price: 0
     },
     {
-      name: "متابعة ما بعد الولادة",
-      description: "متابعة صحة الأم بعد الولادة.",
-      duration: 30
+      name: "الباطنية",
+      description: "كشف واستشارة في الأمراض الباطنية",
+      duration_minutes: 30,
+      price: 0
     },
     {
-      name: "استشارات طبية",
-      description: "استشارات طبية متنوعة.",
-      duration: 30
+      name: "طب القلب",
+      description: "كشف واستشارة أمراض القلب",
+      duration_minutes: 30,
+      price: 0
     }
   ];
 
   for (const service of services) {
-    await pool.query(
-      `
-      INSERT INTO services (
-        id,
-        name,
-        description,
-        duration_minutes,
-        price,
-        active
-      )
-      VALUES ($1, $2, $3, $4, 0, TRUE)
-      ON CONFLICT (name)
-      DO UPDATE SET
-        description = EXCLUDED.description,
-        duration_minutes = EXCLUDED.duration_minutes,
-        active = TRUE,
-        updated_at = NOW()
-      `,
-      [
-        makeId(),
-        service.name,
-        service.description,
-        service.duration
-      ]
+    const existing = await pool.query(
+      "SELECT id FROM services WHERE name = $1 LIMIT 1",
+      [service.name]
     );
+
+    if (existing.rowCount === 0) {
+      await pool.query(
+        "INSERT INTO services " +
+        "(id, name, description, duration_minutes, price, active, created_at, updated_at) " +
+        "VALUES ($1, $2, $3, $4, $5, TRUE, NOW(), NOW())",
+        [
+          makeId(),
+          service.name,
+          service.description,
+          service.duration_minutes,
+          service.price
+        ]
+      );
+    }
   }
 
-  console.log("Default services checked.");
+  console.log("Default services ready.");
 }
+```
 
 /* =========================================================
    ADMIN SEED
