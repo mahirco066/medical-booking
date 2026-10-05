@@ -1369,6 +1369,225 @@ app.delete("/api/admin/doctors/:id", requireAdmin, async (req, res) => {
   }
 });
 
+
+/* ADMIN DOCTOR SCHEDULES */
+
+app.get("/api/admin/doctors/:id/schedules", requireAdmin, async (req, res) => {
+  try {
+    const doctor = await pool.query(
+      "SELECT id,full_name,specialty,active FROM doctors WHERE id=$1 LIMIT 1",
+      [req.params.id]
+    );
+
+    if (!doctor.rowCount) {
+      return jsonError(res, 404, "الطبيب غير موجود.");
+    }
+
+    const result = await pool.query(
+      "SELECT id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active,created_at,updated_at FROM doctor_schedules WHERE doctor_id=$1 ORDER BY day_of_week,start_time",
+      [req.params.id]
+    );
+
+    return jsonOk(res, {
+      doctor: doctor.rows[0],
+      schedules: result.rows
+    });
+  } catch (error) {
+    console.error("Admin doctor schedules list error:", error);
+    return jsonError(res, 500, "تعذر تحميل مواعيد الطبيب.");
+  }
+});
+
+app.post("/api/admin/doctors/:id/schedules", requireAdmin, async (req, res) => {
+  try {
+    const doctorId = req.params.id;
+    const dayOfWeek = Number(req.body.day_of_week);
+    const startTime = clean(req.body.start_time);
+    const endTime = clean(req.body.end_time);
+    const duration = Number(req.body.slot_duration_minutes || 30);
+    const active = req.body.active === false ? false : true;
+
+    const doctor = await pool.query(
+      "SELECT id,full_name,specialty FROM doctors WHERE id=$1 LIMIT 1",
+      [doctorId]
+    );
+
+    if (!doctor.rowCount) {
+      return jsonError(res, 404, "الطبيب غير موجود.");
+    }
+
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+      return jsonError(res, 400, "يوم الأسبوع غير صحيح.");
+    }
+
+    if (!validTime(startTime) || !validTime(endTime)) {
+      return jsonError(res, 400, "وقت بداية أو نهاية الدوام غير صحيح.");
+    }
+
+    const startMinutes = timeToMinutes(startTime);
+    const endMinutes = timeToMinutes(endTime);
+
+    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || startMinutes >= endMinutes) {
+      return jsonError(res, 400, "يجب أن يكون وقت البداية قبل وقت النهاية.");
+    }
+
+    if (!Number.isInteger(duration) || duration <= 0) {
+      return jsonError(res, 400, "مدة الموعد غير صحيحة.");
+    }
+
+    const duplicate = await pool.query(
+      "SELECT id FROM doctor_schedules WHERE doctor_id=$1 AND day_of_week=$2 AND start_time=$3 AND end_time=$4 LIMIT 1",
+      [doctorId, dayOfWeek, startTime, endTime]
+    );
+
+    if (duplicate.rowCount) {
+      return jsonError(res, 409, "هذا الدوام موجود بالفعل للطبيب.");
+    }
+
+    const overlap = await pool.query(
+      "SELECT id FROM doctor_schedules WHERE doctor_id=$1 AND day_of_week=$2 AND start_time < $4 AND end_time > $3 LIMIT 1",
+      [doctorId, dayOfWeek, startTime, endTime]
+    );
+
+    if (overlap.rowCount) {
+      return jsonError(res, 409, "يوجد دوام آخر متداخل مع هذا الوقت في نفس اليوم.");
+    }
+
+    const result = await pool.query(
+      "INSERT INTO doctor_schedules (id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *",
+      [makeId(), doctorId, dayOfWeek, startTime, endTime, duration, active]
+    );
+
+    return jsonOk(res, {
+      message: "تم حفظ دوام الطبيب بنجاح.",
+      schedule: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Admin create doctor schedule error:", error);
+
+    if (error.code === "23505") {
+      return jsonError(res, 409, "هذا الدوام موجود بالفعل.");
+    }
+
+    if (error.code === "23514") {
+      return jsonError(res, 400, "بيانات الدوام غير صحيحة.");
+    }
+
+    return jsonError(res, 500, "تعذر حفظ دوام الطبيب.");
+  }
+});
+
+app.put("/api/admin/doctor-schedules/:id", requireAdmin, async (req, res) => {
+  try {
+    const scheduleId = req.params.id;
+    const dayOfWeek = Number(req.body.day_of_week);
+    const startTime = clean(req.body.start_time);
+    const endTime = clean(req.body.end_time);
+    const duration = Number(req.body.slot_duration_minutes || 30);
+    const active = req.body.active === false ? false : true;
+
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+      return jsonError(res, 400, "يوم الأسبوع غير صحيح.");
+    }
+
+    if (!validTime(startTime) || !validTime(endTime)) {
+      return jsonError(res, 400, "وقت بداية أو نهاية الدوام غير صحيح.");
+    }
+
+    const startMinutes = timeToMinutes(startTime);
+    const endMinutes = timeToMinutes(endTime);
+
+    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || startMinutes >= endMinutes) {
+      return jsonError(res, 400, "يجب أن يكون وقت البداية قبل وقت النهاية.");
+    }
+
+    if (!Number.isInteger(duration) || duration <= 0) {
+      return jsonError(res, 400, "مدة الموعد غير صحيحة.");
+    }
+
+    const existing = await pool.query(
+      "SELECT id,doctor_id FROM doctor_schedules WHERE id=$1 LIMIT 1",
+      [scheduleId]
+    );
+
+    if (!existing.rowCount) {
+      return jsonError(res, 404, "الدوام غير موجود.");
+    }
+
+    const doctorId = existing.rows[0].doctor_id;
+
+    const overlap = await pool.query(
+      "SELECT id FROM doctor_schedules WHERE doctor_id=$1 AND day_of_week=$2 AND id<>$3 AND start_time < $5 AND end_time > $4 LIMIT 1",
+      [doctorId, dayOfWeek, scheduleId, startTime, endTime]
+    );
+
+    if (overlap.rowCount) {
+      return jsonError(res, 409, "يوجد دوام آخر متداخل مع هذا الوقت في نفس اليوم.");
+    }
+
+    const result = await pool.query(
+      "UPDATE doctor_schedules SET day_of_week=$1,start_time=$2,end_time=$3,slot_duration_minutes=$4,active=$5,updated_at=NOW() WHERE id=$6 RETURNING *",
+      [dayOfWeek, startTime, endTime, duration, active, scheduleId]
+    );
+
+    return jsonOk(res, {
+      message: "تم تحديث دوام الطبيب.",
+      schedule: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Admin update doctor schedule error:", error);
+
+    if (error.code === "23514") {
+      return jsonError(res, 400, "بيانات الدوام غير صحيحة.");
+    }
+
+    return jsonError(res, 500, "تعذر تحديث دوام الطبيب.");
+  }
+});
+
+app.patch("/api/admin/doctor-schedules/:id/status", requireAdmin, async (req, res) => {
+  try {
+    const active = req.body.active === true;
+
+    const result = await pool.query(
+      "UPDATE doctor_schedules SET active=$1,updated_at=NOW() WHERE id=$2 RETURNING *",
+      [active, req.params.id]
+    );
+
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الدوام غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: active ? "تم تفعيل الدوام." : "تم إيقاف الدوام.",
+      schedule: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Admin doctor schedule status error:", error);
+    return jsonError(res, 500, "تعذر تغيير حالة الدوام.");
+  }
+});
+
+app.delete("/api/admin/doctor-schedules/:id", requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "DELETE FROM doctor_schedules WHERE id=$1 RETURNING id",
+      [req.params.id]
+    );
+
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الدوام غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم حذف دوام الطبيب."
+    });
+  } catch (error) {
+    console.error("Admin delete doctor schedule error:", error);
+    return jsonError(res, 500, "تعذر حذف دوام الطبيب.");
+  }
+});
+
 /* ADMIN SERVICES */
 
 app.get("/api/admin/services", requireAdmin, async (req, res) => {
