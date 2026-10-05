@@ -404,7 +404,8 @@ async function initDatabase() {
     ["patients", "active", "BOOLEAN NOT NULL DEFAULT TRUE"],
     ["patients", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
     ["patients", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
-
+    
+    ["staff_users", "password_hash", "TEXT"],
     ["staff_users", "full_name", "TEXT NOT NULL DEFAULT 'موظف'"],
     ["staff_users", "role", "TEXT NOT NULL DEFAULT 'staff'"],
     ["staff_users", "phone", "TEXT"],
