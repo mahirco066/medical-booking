@@ -477,17 +477,30 @@ async function initDatabase() {
     ["sessions", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"]
   ];
 
-  for (const item of compatibilityColumns) {
-    await addColumnIfMissing(
-      item[0],
-      item[1],
-      item[2]
-    );
-  }
-
-  console.log(
-    "Database tables and compatibility columns are ready."
+ for (const item of compatibilityColumns) {
+  await addColumnIfMissing(
+    item[0],
+    item[1],
+    item[2]
   );
+}
+
+/* =========================================================
+   LEGACY SESSIONS COMPATIBILITY
+   Allow patient sessions and staff sessions
+========================================================= */
+
+await pool.query(
+  "ALTER TABLE sessions ALTER COLUMN user_id DROP NOT NULL"
+);
+
+await pool.query(
+  "ALTER TABLE sessions ALTER COLUMN staff_user_id DROP NOT NULL"
+);
+
+console.log(
+  "Database tables and compatibility columns are ready."
+);
 }async function createIndexes() {
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)',
