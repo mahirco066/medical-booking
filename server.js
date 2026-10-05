@@ -411,9 +411,6 @@ async function initDatabase() {
     await addColumnIfMissing(item[0], item[1], item[2]);
   }
 
-  /* Legacy sessions compatibility.
-     Old project schemas may have required user_id or token_hash.
-     Current sessions may belong to a patient OR a staff user. */
   await pool.query(
     "ALTER TABLE sessions ALTER COLUMN user_id DROP NOT NULL"
   );
@@ -497,8 +494,7 @@ async function seedAdmin() {
   const username = normalizeUsername(
     process.env.ADMIN_USERNAME || "admin"
   );
-  const password = process.env.ADMIN_PASSWORD || "admin123";
-  const fullName = process.env.ADMIN_NAME || "مدير منصة موعدي";
+  const password = process.env.ADMIN_PASSWORD || "admin123";const fullName = process.env.ADMIN_NAME || "مدير منصة موعدي";
   const passwordHash = await hashPassword(password);
 
   const existing = await pool.query(
@@ -926,7 +922,6 @@ app.get("/api/doctors/:id", async (req, res) => {
   }
 });
 
-
 /* =========================================================
    DOCTOR SCHEDULE HELPERS
 ========================================================= */
@@ -952,8 +947,14 @@ function minutesToTime(minutes) {
 async function getDoctorSchedules(doctorId, dayOfWeek) {
   const params = [doctorId];
   let sql = "SELECT id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active,created_at,updated_at FROM doctor_schedules WHERE doctor_id=$1";
-  if (dayOfWeek !== undefined && dayOfWeek !== null) { sql += " AND day_of_week=$2"; params.push(dayOfWeek); }
+
+  if (dayOfWeek !== undefined && dayOfWeek !== null) {
+    sql += " AND day_of_week=$2";
+    params.push(dayOfWeek);
+  }
+
   sql += " ORDER BY day_of_week,start_time";
+
   const result = await pool.query(sql, params);
   return result.rows;
 }
@@ -963,42 +964,86 @@ async function getBookedTimes(doctorId, dateString) {
     "SELECT appointment_time FROM appointments WHERE doctor_id=$1 AND appointment_date=$2 AND status IN ('pending','confirmed')",
     [doctorId, dateString]
   );
-  return result.rows.map(r => String(r.appointment_time).slice(0,5));
+
+  return result.rows.map(r => String(r.appointment_time).slice(0, 5));
 }
 
 function generateAvailableSlots(schedules, bookedTimes) {
   const booked = new Set(bookedTimes || []);
   const slots = [];
+
   for (const schedule of schedules || []) {
     const start = timeToMinutes(schedule.start_time);
     const end = timeToMinutes(schedule.end_time);
     const duration = Number(schedule.slot_duration_minutes || 30);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(duration) || duration <= 0 || start >= end) continue;
+
+    if (
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      start >= end
+    ) {
+      continue;
+    }
+
     for (let t = start; t + duration <= end; t += duration) {
       const time = minutesToTime(t);
-      slots.push({ time, available: !booked.has(time), schedule_id: schedule.id });
+
+      slots.push({
+        time,
+        available: !booked.has(time),
+        schedule_id: schedule.id
+      });
     }
   }
+
   return slots;
 }
 
 async function isAppointmentTimeAvailable(doctorId, dateString, timeString) {
   const day = getDayOfWeek(dateString);
   const schedules = await getDoctorSchedules(doctorId, day);
-  if (!schedules.length) return { available: false, reason: "الطبيب لا يعمل في هذا اليوم." };
-  const target = timeToMinutes(timeString);
-  const matching = schedules.some(s => {
-    const start = timeToMinutes(s.start_time); const end = timeToMinutes(s.end_time);
-    const duration = Number(s.slot_duration_minutes || 30);
-    return target >= start && target + duration <= end && (target - start) % duration === 0;
-  });
-  if (!matching) return { available: false, reason: "الوقت المختار خارج مواعيد دوام الطبيب." };
-  const booked = await getBookedTimes(doctorId, dateString);
-  if (booked.includes(String(timeString).slice(0,5))) return { available: false, reason: "هذا الموعد محجوز بالفعل للطبيب." };
-  return { available: true };
-}
 
-/* =========================================================
+  if (!schedules.length) {
+    return {
+      available: false,
+      reason: "الطبيب لا يعمل في هذا اليوم."
+    };
+  }
+
+  const target = timeToMinutes(timeString);
+
+  const matching = schedules.some(s => {
+    const start = timeToMinutes(s.start_time);
+    const end = timeToMinutes(s.end_time);
+    const duration = Number(s.slot_duration_minutes || 30);
+
+    return (
+      target >= start &&
+      target + duration <= end &&
+      (target - start) % duration === 0
+    );
+  });
+
+  if (!matching) {
+    return {
+      available: false,
+      reason: "الوقت المختار خارج مواعيد دوام الطبيب."
+    };
+  }
+
+  const booked = await getBookedTimes(doctorId, dateString);
+
+  if (booked.includes(String(timeString).slice(0, 5))) {
+    return {
+      available: false,
+      reason: "هذا الموعد محجوز بالفعل للطبيب."
+    };
+  }
+
+  return { available: true };
+}/* =========================================================
    APPOINTMENTS
 ========================================================= */
 
@@ -1114,7 +1159,9 @@ app.patch("/api/my-appointments/:id/cancel", requireAuth, async (req, res) => {
       return jsonError(res, 403, "هذا المسار مخصص للمرضى.");
     }
 
-    const reason = clean(req.body.reason || req.body.cancellation_reason) || null;
+    const reason =
+      clean(req.body.reason || req.body.cancellation_reason) || null;
+
     const result = await pool.query(
       "UPDATE appointments a SET status='cancelled',cancellation_reason=$1,updated_at=NOW() FROM patients p WHERE a.id=$2 AND a.patient_id=p.id AND p.user_id=$3 AND a.status IN ('pending','confirmed') RETURNING a.*",
       [reason, req.params.id, req.authUser.id]
@@ -1148,7 +1195,9 @@ app.get("/api/my-profile", requireAuth, async (req, res) => {
       [req.authUser.id]
     );
 
-    return jsonOk(res, { profile: result.rows[0] || null });
+    return jsonOk(res, {
+      profile: result.rows[0] || null
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحميل الملف الشخصي.");
   }
@@ -1178,10 +1227,20 @@ app.put("/api/my-profile", requireAuth, async (req, res) => {
 
     await pool.query(
       "UPDATE patients SET full_name=$1,phone=$2,email=$3,date_of_birth=$4,gender=$5,address=$6,updated_at=NOW() WHERE user_id=$7",
-      [fullName, phone, email, dob, gender, address, req.authUser.id]
+      [
+        fullName,
+        phone,
+        email,
+        dob,
+        gender,
+        address,
+        req.authUser.id
+      ]
     );
 
-    return jsonOk(res, { message: "تم تحديث الملف الشخصي." });
+    return jsonOk(res, {
+      message: "تم تحديث الملف الشخصي."
+    });
   } catch (error) {
     console.error("Profile update error:", error);
     return jsonError(res, 500, "تعذر تحديث الملف الشخصي.");
@@ -1196,6 +1255,7 @@ app.get("/api/ads", async (req, res) => {
   try {
     const category = clean(req.query.category || "");
     const values = [];
+
     let where =
       "active=TRUE AND (starts_at IS NULL OR starts_at<=NOW()) AND (ends_at IS NULL OR ends_at>=NOW())";
 
@@ -1206,12 +1266,14 @@ app.get("/api/ads", async (req, res) => {
 
     const result = await pool.query(
       "SELECT id,title,description,image_url,target_url,advertiser_name,category,starts_at,ends_at FROM ads WHERE " +
-      where +
-      " ORDER BY created_at DESC",
+        where +
+        " ORDER BY created_at DESC",
       values
     );
 
-    return jsonOk(res, { ads: result.rows });
+    return jsonOk(res, {
+      ads: result.rows
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحميل الإعلانات.");
   }
@@ -1224,14 +1286,18 @@ app.post("/api/ads/:id/impression", async (req, res) => {
       [req.params.id]
     );
 
-    if (!ad.rowCount) return jsonError(res, 404, "الإعلان غير موجود.");
+    if (!ad.rowCount) {
+      return jsonError(res, 404, "الإعلان غير موجود.");
+    }
 
     await pool.query(
       "INSERT INTO ad_impressions (id,ad_id) VALUES ($1,$2)",
       [makeId(), req.params.id]
     );
 
-    return jsonOk(res, { message: "تم تسجيل مشاهدة الإعلان." });
+    return jsonOk(res, {
+      message: "تم تسجيل مشاهدة الإعلان."
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تسجيل مشاهدة الإعلان.");
   }
@@ -1244,14 +1310,18 @@ app.post("/api/ads/:id/click", async (req, res) => {
       [req.params.id]
     );
 
-    if (!ad.rowCount) return jsonError(res, 404, "الإعلان غير موجود.");
+    if (!ad.rowCount) {
+      return jsonError(res, 404, "الإعلان غير موجود.");
+    }
 
     await pool.query(
       "INSERT INTO ad_clicks (id,ad_id) VALUES ($1,$2)",
       [makeId(), req.params.id]
     );
 
-    return jsonOk(res, { target_url: ad.rows[0].target_url || null });
+    return jsonOk(res, {
+      target_url: ad.rows[0].target_url || null
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تسجيل النقر على الإعلان.");
   }
@@ -1262,11 +1332,15 @@ app.post("/api/ads/:id/click", async (req, res) => {
 ========================================================= */
 
 app.get("/api/admin/me", requireAdmin, async (req, res) => {
-  return jsonOk(res, { user: req.authUser });
+  return jsonOk(res, {
+    user: req.authUser
+  });
 });
 
 app.get("/api/staff/me", requireAdmin, async (req, res) => {
-  return jsonOk(res, { user: req.authUser });
+  return jsonOk(res, {
+    user: req.authUser
+  });
 });
 
 /* ADMIN DOCTORS */
@@ -1276,7 +1350,10 @@ app.get("/api/admin/doctors", requireAdmin, async (req, res) => {
     const result = await pool.query(
       "SELECT id,full_name,specialty,area,phone,email,bio,image_url,rating,active,created_at,updated_at FROM doctors ORDER BY created_at DESC"
     );
-    return jsonOk(res, { doctors: result.rows });
+
+    return jsonOk(res, {
+      doctors: result.rows
+    });
   } catch (error) {
     console.error("Admin doctors list error:", error);
     return jsonError(res, 500, "تعذر تحميل الأطباء.");
@@ -1295,15 +1372,34 @@ app.post("/api/admin/doctors", requireAdmin, async (req, res) => {
     const rating = Number(req.body.rating || 5);
     const active = req.body.active === false ? false : true;
 
-    if (!fullName) return jsonError(res, 400, "اسم الطبيب مطلوب.");
-    if (!specialty) return jsonError(res, 400, "التخصص مطلوب.");
+    if (!fullName) {
+      return jsonError(res, 400, "اسم الطبيب مطلوب.");
+    }
+
+    if (!specialty) {
+      return jsonError(res, 400, "التخصص مطلوب.");
+    }
 
     const result = await pool.query(
       "INSERT INTO doctors (id,full_name,specialty,area,phone,email,bio,image_url,rating,active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
-      [makeId(), fullName, specialty, area, phone, email, bio, imageUrl, Number.isFinite(rating) ? rating : 5, active]
+      [
+        makeId(),
+        fullName,
+        specialty,
+        area,
+        phone,
+        email,
+        bio,
+        imageUrl,
+        Number.isFinite(rating) ? rating : 5,
+        active
+      ]
     );
 
-    return jsonOk(res, { message: "تمت إضافة الطبيب بنجاح.", doctor: result.rows[0] });
+    return jsonOk(res, {
+      message: "تمت إضافة الطبيب بنجاح.",
+      doctor: result.rows[0]
+    });
   } catch (error) {
     console.error("Admin create doctor error:", error);
     return jsonError(res, 500, "تعذر إضافة الطبيب.");
@@ -1328,11 +1424,28 @@ app.put("/api/admin/doctors/:id", requireAdmin, async (req, res) => {
 
     const result = await pool.query(
       "UPDATE doctors SET full_name=$1,specialty=$2,area=$3,phone=$4,email=$5,bio=$6,image_url=$7,rating=$8,active=$9,updated_at=NOW() WHERE id=$10 RETURNING *",
-      [fullName, specialty, area, phone, email, bio, imageUrl, Number.isFinite(rating) ? rating : 5, active, req.params.id]
+      [
+        fullName,
+        specialty,
+        area,
+        phone,
+        email,
+        bio,
+        imageUrl,
+        Number.isFinite(rating) ? rating : 5,
+        active,
+        req.params.id
+      ]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الطبيب غير موجود.");
-    return jsonOk(res, { message: "تم تحديث بيانات الطبيب.", doctor: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الطبيب غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم تحديث بيانات الطبيب.",
+      doctor: result.rows[0]
+    });
   } catch (error) {
     console.error("Admin update doctor error:", error);
     return jsonError(res, 500, "تعذر تحديث الطبيب.");
@@ -1342,13 +1455,20 @@ app.put("/api/admin/doctors/:id", requireAdmin, async (req, res) => {
 app.patch("/api/admin/doctors/:id/status", requireAdmin, async (req, res) => {
   try {
     const active = req.body.active === true;
+
     const result = await pool.query(
       "UPDATE doctors SET active=$1,updated_at=NOW() WHERE id=$2 RETURNING *",
       [active, req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الطبيب غير موجود.");
-    return jsonOk(res, { message: active ? "تم تفعيل الطبيب." : "تم إيقاف الطبيب.", doctor: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الطبيب غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: active ? "تم تفعيل الطبيب." : "تم إيقاف الطبيب.",
+      doctor: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تغيير حالة الطبيب.");
   }
@@ -1361,14 +1481,18 @@ app.delete("/api/admin/doctors/:id", requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الطبيب غير موجود.");
-    return jsonOk(res, { message: "تم حذف الطبيب." });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الطبيب غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم حذف الطبيب."
+    });
   } catch (error) {
     console.error("Admin delete doctor error:", error);
     return jsonError(res, 500, "تعذر حذف الطبيب.");
   }
 });
-
 
 /* ADMIN DOCTOR SCHEDULES */
 
@@ -1427,7 +1551,11 @@ app.post("/api/admin/doctors/:id/schedules", requireAdmin, async (req, res) => {
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
 
-    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || startMinutes >= endMinutes) {
+    if (
+      !Number.isFinite(startMinutes) ||
+      !Number.isFinite(endMinutes) ||
+      startMinutes >= endMinutes
+    ) {
       return jsonError(res, 400, "يجب أن يكون وقت البداية قبل وقت النهاية.");
     }
 
@@ -1455,7 +1583,15 @@ app.post("/api/admin/doctors/:id/schedules", requireAdmin, async (req, res) => {
 
     const result = await pool.query(
       "INSERT INTO doctor_schedules (id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *",
-      [makeId(), doctorId, dayOfWeek, startTime, endTime, duration, active]
+      [
+        makeId(),
+        doctorId,
+        dayOfWeek,
+        startTime,
+        endTime,
+        duration,
+        active
+      ]
     );
 
     return jsonOk(res, {
@@ -1475,9 +1611,7 @@ app.post("/api/admin/doctors/:id/schedules", requireAdmin, async (req, res) => {
 
     return jsonError(res, 500, "تعذر حفظ دوام الطبيب.");
   }
-});
-
-app.put("/api/admin/doctor-schedules/:id", requireAdmin, async (req, res) => {
+});app.put("/api/admin/doctor-schedules/:id", requireAdmin, async (req, res) => {
   try {
     const scheduleId = req.params.id;
     const dayOfWeek = Number(req.body.day_of_week);
@@ -1497,7 +1631,11 @@ app.put("/api/admin/doctor-schedules/:id", requireAdmin, async (req, res) => {
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
 
-    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || startMinutes >= endMinutes) {
+    if (
+      !Number.isFinite(startMinutes) ||
+      !Number.isFinite(endMinutes) ||
+      startMinutes >= endMinutes
+    ) {
       return jsonError(res, 400, "يجب أن يكون وقت البداية قبل وقت النهاية.");
     }
 
@@ -1518,16 +1656,33 @@ app.put("/api/admin/doctor-schedules/:id", requireAdmin, async (req, res) => {
 
     const overlap = await pool.query(
       "SELECT id FROM doctor_schedules WHERE doctor_id=$1 AND day_of_week=$2 AND id<>$3 AND start_time < $5 AND end_time > $4 LIMIT 1",
-      [doctorId, dayOfWeek, scheduleId, startTime, endTime]
+      [
+        doctorId,
+        dayOfWeek,
+        scheduleId,
+        startTime,
+        endTime
+      ]
     );
 
     if (overlap.rowCount) {
-      return jsonError(res, 409, "يوجد دوام آخر متداخل مع هذا الوقت في نفس اليوم.");
+      return jsonError(
+        res,
+        409,
+        "يوجد دوام آخر متداخل مع هذا الوقت في نفس اليوم."
+      );
     }
 
     const result = await pool.query(
       "UPDATE doctor_schedules SET day_of_week=$1,start_time=$2,end_time=$3,slot_duration_minutes=$4,active=$5,updated_at=NOW() WHERE id=$6 RETURNING *",
-      [dayOfWeek, startTime, endTime, duration, active, scheduleId]
+      [
+        dayOfWeek,
+        startTime,
+        endTime,
+        duration,
+        active,
+        scheduleId
+      ]
     );
 
     return jsonOk(res, {
@@ -1595,7 +1750,10 @@ app.get("/api/admin/services", requireAdmin, async (req, res) => {
     const result = await pool.query(
       "SELECT id,name,description,duration_minutes,price,active,created_at,updated_at FROM services ORDER BY created_at DESC"
     );
-    return jsonOk(res, { services: result.rows });
+
+    return jsonOk(res, {
+      services: result.rows
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحميل الخدمات.");
   }
@@ -1609,16 +1767,31 @@ app.post("/api/admin/services", requireAdmin, async (req, res) => {
     const price = Number(req.body.price || 0);
     const active = req.body.active === false ? false : true;
 
-    if (!name) return jsonError(res, 400, "اسم الخدمة مطلوب.");
+    if (!name) {
+      return jsonError(res, 400, "اسم الخدمة مطلوب.");
+    }
 
     const result = await pool.query(
       "INSERT INTO services (id,name,description,duration_minutes,price,active) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
-      [makeId(), name, description, Number.isFinite(duration) ? duration : 30, Number.isFinite(price) ? price : 0, active]
+      [
+        makeId(),
+        name,
+        description,
+        Number.isFinite(duration) ? duration : 30,
+        Number.isFinite(price) ? price : 0,
+        active
+      ]
     );
 
-    return jsonOk(res, { message: "تمت إضافة الخدمة.", service: result.rows[0] });
+    return jsonOk(res, {
+      message: "تمت إضافة الخدمة.",
+      service: result.rows[0]
+    });
   } catch (error) {
-    if (error.code === "23505") return jsonError(res, 409, "هذه الخدمة موجودة بالفعل.");
+    if (error.code === "23505") {
+      return jsonError(res, 409, "هذه الخدمة موجودة بالفعل.");
+    }
+
     return jsonError(res, 500, "تعذر إضافة الخدمة.");
   }
 });
@@ -1631,17 +1804,35 @@ app.put("/api/admin/services/:id", requireAdmin, async (req, res) => {
     const price = Number(req.body.price || 0);
     const active = req.body.active === false ? false : true;
 
-    if (!name) return jsonError(res, 400, "اسم الخدمة مطلوب.");
+    if (!name) {
+      return jsonError(res, 400, "اسم الخدمة مطلوب.");
+    }
 
     const result = await pool.query(
       "UPDATE services SET name=$1,description=$2,duration_minutes=$3,price=$4,active=$5,updated_at=NOW() WHERE id=$6 RETURNING *",
-      [name, description, Number.isFinite(duration) ? duration : 30, Number.isFinite(price) ? price : 0, active, req.params.id]
+      [
+        name,
+        description,
+        Number.isFinite(duration) ? duration : 30,
+        Number.isFinite(price) ? price : 0,
+        active,
+        req.params.id
+      ]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الخدمة غير موجودة.");
-    return jsonOk(res, { message: "تم تحديث الخدمة.", service: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الخدمة غير موجودة.");
+    }
+
+    return jsonOk(res, {
+      message: "تم تحديث الخدمة.",
+      service: result.rows[0]
+    });
   } catch (error) {
-    if (error.code === "23505") return jsonError(res, 409, "اسم الخدمة مستخدم بالفعل.");
+    if (error.code === "23505") {
+      return jsonError(res, 409, "اسم الخدمة مستخدم بالفعل.");
+    }
+
     return jsonError(res, 500, "تعذر تحديث الخدمة.");
   }
 });
@@ -1649,13 +1840,20 @@ app.put("/api/admin/services/:id", requireAdmin, async (req, res) => {
 app.patch("/api/admin/services/:id/status", requireAdmin, async (req, res) => {
   try {
     const active = req.body.active === true;
+
     const result = await pool.query(
       "UPDATE services SET active=$1,updated_at=NOW() WHERE id=$2 RETURNING *",
       [active, req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الخدمة غير موجودة.");
-    return jsonOk(res, { message: active ? "تم تفعيل الخدمة." : "تم إيقاف الخدمة.", service: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الخدمة غير موجودة.");
+    }
+
+    return jsonOk(res, {
+      message: active ? "تم تفعيل الخدمة." : "تم إيقاف الخدمة.",
+      service: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تغيير حالة الخدمة.");
   }
@@ -1668,10 +1866,22 @@ app.delete("/api/admin/services/:id", requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الخدمة غير موجودة.");
-    return jsonOk(res, { message: "تم حذف الخدمة." });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الخدمة غير موجودة.");
+    }
+
+    return jsonOk(res, {
+      message: "تم حذف الخدمة."
+    });
   } catch (error) {
-    if (error.code === "23503") return jsonError(res, 409, "لا يمكن حذف الخدمة لأنها مرتبطة بمواعيد.");
+    if (error.code === "23503") {
+      return jsonError(
+        res,
+        409,
+        "لا يمكن حذف الخدمة لأنها مرتبطة بمواعيد."
+      );
+    }
+
     return jsonError(res, 500, "تعذر حذف الخدمة.");
   }
 });
@@ -1698,16 +1908,20 @@ app.get("/api/admin/appointments", requireAdmin, async (req, res) => {
       index++;
     }
 
-    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const where = conditions.length
+      ? "WHERE " + conditions.join(" AND ")
+      : "";
 
     const result = await pool.query(
       "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price,p.email AS patient_email FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id LEFT JOIN patients p ON p.id=a.patient_id " +
-      where +
-      " ORDER BY a.appointment_date DESC,a.appointment_time DESC",
+        where +
+        " ORDER BY a.appointment_date DESC,a.appointment_time DESC",
       values
     );
 
-    return jsonOk(res, { appointments: result.rows });
+    return jsonOk(res, {
+      appointments: result.rows
+    });
   } catch (error) {
     console.error("Admin appointments error:", error);
     return jsonError(res, 500, "تعذر تحميل المواعيد.");
@@ -1717,21 +1931,39 @@ app.get("/api/admin/appointments", requireAdmin, async (req, res) => {
 app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) => {
   try {
     const status = clean(req.body.status);
-    const allowed = ["pending", "confirmed", "completed", "cancelled", "no_show"];
+
+    const allowed = [
+      "pending",
+      "confirmed",
+      "completed",
+      "cancelled",
+      "no_show"
+    ];
 
     if (!allowed.includes(status)) {
       return jsonError(res, 400, "حالة الموعد غير صحيحة.");
     }
 
-    const cancellationReason = clean(req.body.cancellation_reason) || null;
+    const cancellationReason =
+      clean(req.body.cancellation_reason) || null;
 
     const result = await pool.query(
       "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 RETURNING *",
-      [status, status === "cancelled" ? cancellationReason : null, req.params.id]
+      [
+        status,
+        status === "cancelled" ? cancellationReason : null,
+        req.params.id
+      ]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الموعد غير موجود.");
-    return jsonOk(res, { message: "تم تحديث حالة الموعد.", appointment: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الموعد غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم تحديث حالة الموعد.",
+      appointment: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحديث حالة الموعد.");
   }
@@ -1744,8 +1976,13 @@ app.delete("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الموعد غير موجود.");
-    return jsonOk(res, { message: "تم حذف الموعد." });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الموعد غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم حذف الموعد."
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر حذف الموعد.");
   }
@@ -1761,18 +1998,21 @@ app.get("/api/admin/patients", requireAdmin, async (req, res) => {
 
     if (search) {
       values.push("%" + search + "%");
+
       where =
         "WHERE p.full_name ILIKE $1 OR COALESCE(p.phone,'') ILIKE $1 OR COALESCE(p.email,'') ILIKE $1 OR COALESCE(u.username,'') ILIKE $1";
     }
 
     const result = await pool.query(
       "SELECT p.id,p.user_id,p.full_name,p.phone,p.email,p.date_of_birth,p.gender,p.address,p.active,p.created_at,p.updated_at,u.username,u.role AS user_role FROM patients p LEFT JOIN users u ON u.id=p.user_id " +
-      where +
-      " ORDER BY p.created_at DESC",
+        where +
+        " ORDER BY p.created_at DESC",
       values
     );
 
-    return jsonOk(res, { patients: result.rows });
+    return jsonOk(res, {
+      patients: result.rows
+    });
   } catch (error) {
     console.error("Admin patients error:", error);
     return jsonError(res, 500, "تعذر تحميل المرضى.");
@@ -1786,8 +2026,13 @@ app.get("/api/admin/patients/:id", requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "المريض غير موجود.");
-    return jsonOk(res, { patient: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "المريض غير موجود.");
+    }
+
+    return jsonOk(res, {
+      patient: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحميل بيانات المريض.");
   }
@@ -1801,26 +2046,52 @@ app.put("/api/admin/patients/:id", requireAdmin, async (req, res) => {
     const dateOfBirth = clean(req.body.date_of_birth) || null;
     const gender = clean(req.body.gender) || null;
     const address = clean(req.body.address) || null;
-    const active = !(req.body.active === false || req.body.active === "false");
+    const active = !(
+      req.body.active === false ||
+      req.body.active === "false"
+    );
 
-    if (!fullName) return jsonError(res, 400, "اسم المريض مطلوب.");
+    if (!fullName) {
+      return jsonError(res, 400, "اسم المريض مطلوب.");
+    }
 
     const result = await pool.query(
       "UPDATE patients SET full_name=$1,phone=$2,email=$3,date_of_birth=$4,gender=$5,address=$6,active=$7,updated_at=NOW() WHERE id=$8 RETURNING *",
-      [fullName, phone, email, dateOfBirth, gender, address, active, req.params.id]
+      [
+        fullName,
+        phone,
+        email,
+        dateOfBirth,
+        gender,
+        address,
+        active,
+        req.params.id
+      ]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "المريض غير موجود.");
+    if (!result.rowCount) {
+      return jsonError(res, 404, "المريض غير موجود.");
+    }
 
     const patient = result.rows[0];
+
     if (patient.user_id) {
       await pool.query(
         "UPDATE users SET full_name=$1,phone=$2,email=$3,active=$4,updated_at=NOW() WHERE id=$5",
-        [fullName, phone, email, active, patient.user_id]
+        [
+          fullName,
+          phone,
+          email,
+          active,
+          patient.user_id
+        ]
       );
     }
 
-    return jsonOk(res, { message: "تم تحديث بيانات المريض.", patient });
+    return jsonOk(res, {
+      message: "تم تحديث بيانات المريض.",
+      patient
+    });
   } catch (error) {
     console.error("Admin update patient error:", error);
     return jsonError(res, 500, "تعذر تحديث بيانات المريض.");
@@ -1829,15 +2100,22 @@ app.put("/api/admin/patients/:id", requireAdmin, async (req, res) => {
 
 app.patch("/api/admin/patients/:id/status", requireAdmin, async (req, res) => {
   try {
-    const active = !(req.body.active === false || req.body.active === "false");
+    const active = !(
+      req.body.active === false ||
+      req.body.active === "false"
+    );
+
     const result = await pool.query(
       "UPDATE patients SET active=$1,updated_at=NOW() WHERE id=$2 RETURNING *",
       [active, req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "المريض غير موجود.");
+    if (!result.rowCount) {
+      return jsonError(res, 404, "المريض غير موجود.");
+    }
 
     const patient = result.rows[0];
+
     if (patient.user_id) {
       await pool.query(
         "UPDATE users SET active=$1,updated_at=NOW() WHERE id=$2",
@@ -1845,7 +2123,10 @@ app.patch("/api/admin/patients/:id/status", requireAdmin, async (req, res) => {
       );
     }
 
-    return jsonOk(res, { message: active ? "تم تفعيل المريض." : "تم إيقاف المريض.", patient });
+    return jsonOk(res, {
+      message: active ? "تم تفعيل المريض." : "تم إيقاف المريض.",
+      patient
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تغيير حالة المريض.");
   }
@@ -1864,11 +2145,13 @@ app.get("/api/my-medical-records", requireAuth, async (req, res) => {
       [req.authUser.id]
     );
 
-    return jsonOk(res, { medical_records: result.rows });
+    return jsonOk(res, {
+      medical_records: result.rows
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحميل السجلات الطبية.");
   }
-});
+});/* ADMIN MEDICAL RECORDS */
 
 app.get("/api/admin/medical-records", requireAdmin, async (req, res) => {
   try {
@@ -1876,7 +2159,9 @@ app.get("/api/admin/medical-records", requireAdmin, async (req, res) => {
       "SELECT m.*,p.full_name AS patient_name,d.full_name AS doctor_name,a.appointment_date,a.appointment_time FROM medical_records m LEFT JOIN patients p ON p.id=m.patient_id LEFT JOIN doctors d ON d.id=m.doctor_id LEFT JOIN appointments a ON a.id=m.appointment_id ORDER BY m.created_at DESC"
     );
 
-    return jsonOk(res, { medical_records: result.rows });
+    return jsonOk(res, {
+      medical_records: result.rows
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحميل السجلات الطبية.");
   }
@@ -1885,7 +2170,10 @@ app.get("/api/admin/medical-records", requireAdmin, async (req, res) => {
 app.post("/api/admin/medical-records", requireAdmin, async (req, res) => {
   try {
     const patientId = clean(req.body.patient_id);
-    if (!patientId) return jsonError(res, 400, "المريض مطلوب.");
+
+    if (!patientId) {
+      return jsonError(res, 400, "المريض مطلوب.");
+    }
 
     const result = await pool.query(
       "INSERT INTO medical_records (id,patient_id,doctor_id,appointment_id,diagnosis,treatment,prescription,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
@@ -1901,7 +2189,10 @@ app.post("/api/admin/medical-records", requireAdmin, async (req, res) => {
       ]
     );
 
-    return jsonOk(res, { message: "تمت إضافة السجل الطبي.", medical_record: result.rows[0] });
+    return jsonOk(res, {
+      message: "تمت إضافة السجل الطبي.",
+      medical_record: result.rows[0]
+    });
   } catch (error) {
     console.error("Create medical record error:", error);
     return jsonError(res, 500, "تعذر إضافة السجل الطبي.");
@@ -1924,8 +2215,14 @@ app.put("/api/admin/medical-records/:id", requireAdmin, async (req, res) => {
       ]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "السجل الطبي غير موجود.");
-    return jsonOk(res, { message: "تم تحديث السجل الطبي.", medical_record: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "السجل الطبي غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم تحديث السجل الطبي.",
+      medical_record: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحديث السجل الطبي.");
   }
@@ -1938,8 +2235,13 @@ app.delete("/api/admin/medical-records/:id", requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "السجل الطبي غير موجود.");
-    return jsonOk(res, { message: "تم حذف السجل الطبي." });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "السجل الطبي غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم حذف السجل الطبي."
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر حذف السجل الطبي.");
   }
@@ -1953,7 +2255,9 @@ app.get("/api/admin/ads", requireAdmin, async (req, res) => {
       "SELECT a.*,COALESCE((SELECT COUNT(*) FROM ad_impressions i WHERE i.ad_id=a.id),0)::int AS impressions,COALESCE((SELECT COUNT(*) FROM ad_clicks c WHERE c.ad_id=a.id),0)::int AS clicks FROM ads a ORDER BY a.created_at DESC"
     );
 
-    return jsonOk(res, { ads: result.rows });
+    return jsonOk(res, {
+      ads: result.rows
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحميل الإعلانات.");
   }
@@ -1962,7 +2266,10 @@ app.get("/api/admin/ads", requireAdmin, async (req, res) => {
 app.post("/api/admin/ads", requireAdmin, async (req, res) => {
   try {
     const title = clean(req.body.title);
-    if (!title) return jsonError(res, 400, "عنوان الإعلان مطلوب.");
+
+    if (!title) {
+      return jsonError(res, 400, "عنوان الإعلان مطلوب.");
+    }
 
     const result = await pool.query(
       "INSERT INTO ads (id,title,description,image_url,target_url,advertiser_name,category,active,starts_at,ends_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
@@ -1980,7 +2287,10 @@ app.post("/api/admin/ads", requireAdmin, async (req, res) => {
       ]
     );
 
-    return jsonOk(res, { message: "تمت إضافة الإعلان.", ad: result.rows[0] });
+    return jsonOk(res, {
+      message: "تمت إضافة الإعلان.",
+      ad: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر إضافة الإعلان.");
   }
@@ -1989,9 +2299,15 @@ app.post("/api/admin/ads", requireAdmin, async (req, res) => {
 app.put("/api/admin/ads/:id", requireAdmin, async (req, res) => {
   try {
     const title = clean(req.body.title);
-    if (!title) return jsonError(res, 400, "عنوان الإعلان مطلوب.");
 
-    const active = !(req.body.active === false || req.body.active === "false");
+    if (!title) {
+      return jsonError(res, 400, "عنوان الإعلان مطلوب.");
+    }
+
+    const active = !(
+      req.body.active === false ||
+      req.body.active === "false"
+    );
 
     const result = await pool.query(
       "UPDATE ads SET title=$1,description=$2,image_url=$3,target_url=$4,advertiser_name=$5,category=$6,active=$7,starts_at=$8,ends_at=$9,updated_at=NOW() WHERE id=$10 RETURNING *",
@@ -2009,8 +2325,14 @@ app.put("/api/admin/ads/:id", requireAdmin, async (req, res) => {
       ]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الإعلان غير موجود.");
-    return jsonOk(res, { message: "تم تحديث الإعلان.", ad: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الإعلان غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم تحديث الإعلان.",
+      ad: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تحديث الإعلان.");
   }
@@ -2018,14 +2340,24 @@ app.put("/api/admin/ads/:id", requireAdmin, async (req, res) => {
 
 app.patch("/api/admin/ads/:id/status", requireAdmin, async (req, res) => {
   try {
-    const active = !(req.body.active === false || req.body.active === "false");
+    const active = !(
+      req.body.active === false ||
+      req.body.active === "false"
+    );
+
     const result = await pool.query(
       "UPDATE ads SET active=$1,updated_at=NOW() WHERE id=$2 RETURNING *",
       [active, req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الإعلان غير موجود.");
-    return jsonOk(res, { message: active ? "تم تفعيل الإعلان." : "تم إيقاف الإعلان.", ad: result.rows[0] });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الإعلان غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: active ? "تم تفعيل الإعلان." : "تم إيقاف الإعلان.",
+      ad: result.rows[0]
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر تغيير حالة الإعلان.");
   }
@@ -2038,8 +2370,13 @@ app.delete("/api/admin/ads/:id", requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    if (!result.rowCount) return jsonError(res, 404, "الإعلان غير موجود.");
-    return jsonOk(res, { message: "تم حذف الإعلان." });
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الإعلان غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم حذف الإعلان."
+    });
   } catch (error) {
     return jsonError(res, 500, "تعذر حذف الإعلان.");
   }
@@ -2049,11 +2386,20 @@ app.delete("/api/admin/ads/:id", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/stats", requireAdmin, async (req, res) => {
   try {
-    const [patients, doctors, services, appointments, records, ads] = await Promise.all([
+    const [
+      patients,
+      doctors,
+      services,
+      appointments,
+      records,
+      ads
+    ] = await Promise.all([
       pool.query("SELECT COUNT(*)::int AS count FROM patients"),
       pool.query("SELECT COUNT(*)::int AS count FROM doctors WHERE active=TRUE"),
       pool.query("SELECT COUNT(*)::int AS count FROM services WHERE active=TRUE"),
-      pool.query("SELECT status,COUNT(*)::int AS count FROM appointments GROUP BY status"),
+      pool.query(
+        "SELECT status,COUNT(*)::int AS count FROM appointments GROUP BY status"
+      ),
       pool.query("SELECT COUNT(*)::int AS count FROM medical_records"),
       pool.query("SELECT COUNT(*)::int AS count FROM ads WHERE active=TRUE")
     ]);
@@ -2104,15 +2450,20 @@ app.use((req, res, next) => {
     return next();
   }
 
-  res.sendFile(path.join(PUBLIC_DIR, "index.html"), (error) => {
-    if (error) next(error);
-  });
+  res.sendFile(
+    path.join(PUBLIC_DIR, "index.html"),
+    (error) => {
+      if (error) next(error);
+    }
+  );
 });
 
 app.use((error, req, res, next) => {
   console.error("Unhandled server error:", error);
 
-  if (res.headersSent) return next(error);
+  if (res.headersSent) {
+    return next(error);
+  }
 
   return jsonError(res, 500, "حدث خطأ داخلي في الخادم.");
 });
@@ -2136,10 +2487,16 @@ async function startServer() {
     console.log("Database initialization completed.");
 
     app.listen(PORT, "0.0.0.0", () => {
-      console.log("Medical Booking running on port " + PORT);
+      console.log(
+        "Medical Booking running on port " + PORT
+      );
     });
   } catch (error) {
-    console.error("Database initialization failed:", error);
+    console.error(
+      "Database initialization failed:",
+      error
+    );
+
     process.exit(1);
   }
 }
