@@ -3,3025 +3,382 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <title>لوحة إدارة موعدي</title>
-
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap"
-    rel="stylesheet"
-  >
-
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      background: #f1f5f9;
-      color: #0f172a;
-      font-family: "Cairo", sans-serif;
-    }
-
-    button,
-    input,
-    select,
-    textarea {
-      font-family: inherit;
-    }
-
-    button {
-      cursor: pointer;
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    /* =========================
-       Login
-       ========================= */
-
-    #loginPage {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      background:
-        radial-gradient(circle at top right, rgba(20,184,166,.15), transparent 35%),
-        radial-gradient(circle at bottom left, rgba(14,165,233,.12), transparent 35%),
-        #f8fafc;
-    }
-
-    .login-card {
-      width: min(100%, 440px);
-      background: #fff;
-      border-radius: 26px;
-      padding: 35px;
-      box-shadow: 0 25px 70px rgba(15,23,42,.12);
-      border: 1px solid #e2e8f0;
-    }
-
-    .brand {
-      text-align: center;
-      margin-bottom: 28px;
-    }
-
-    .brand-icon {
-      width: 70px;
-      height: 70px;
-      margin: 0 auto 14px;
-      border-radius: 22px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #0f766e;
-      color: white;
-      font-size: 34px;
-      box-shadow: 0 12px 30px rgba(15,118,110,.25);
-    }
-
-    .brand h1 {
-      margin: 0;
-      font-size: 25px;
-      font-weight: 900;
-    }
-
-    .brand p {
-      margin: 7px 0 0;
-      color: #64748b;
-      font-size: 13px;
-    }
-
-    .field {
-      margin-bottom: 16px;
-    }
-
-    .field label {
-      display: block;
-      margin-bottom: 7px;
-      font-size: 13px;
-      font-weight: 800;
-      color: #334155;
-    }
-
-    .field input,
-    .field select,
-    .field textarea {
-      width: 100%;
-      border: 1px solid #dbe3ec;
-      border-radius: 13px;
-      padding: 12px 14px;
-      outline: none;
-      background: white;
-      color: #0f172a;
-      font-size: 14px;
-    }
-
-    .field input:focus,
-    .field select:focus,
-    .field textarea:focus {
-      border-color: #0f766e;
-      box-shadow: 0 0 0 3px rgba(15,118,110,.09);
-    }
-
-    .primary-btn {
-      width: 100%;
-      border: 0;
-      border-radius: 13px;
-      padding: 13px 18px;
-      background: #0f766e;
-      color: white;
-      font-weight: 800;
-      font-size: 15px;
-    }
-
-    .primary-btn:hover {
-      background: #115e59;
-    }
-
-    .error-box {
-      background: #fef2f2;
-      color: #b91c1c;
-      border: 1px solid #fecaca;
-      border-radius: 12px;
-      padding: 11px 13px;
-      margin-bottom: 15px;
-      font-size: 13px;
-      font-weight: 700;
-    }
-
-    /* =========================
-       Dashboard
-       ========================= */
-
-    #dashboardPage {
-      min-height: 100vh;
-    }
-
-    .topbar {
-      background: #fff;
-      border-bottom: 1px solid #e2e8f0;
-      min-height: 72px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      padding: 12px 28px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .topbar-brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .topbar-logo {
-      width: 46px;
-      height: 46px;
-      border-radius: 14px;
-      background: #0f766e;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-    }
-
-    .topbar-title {
-      font-weight: 900;
-      font-size: 18px;
-    }
-
-    .topbar-subtitle {
-      color: #64748b;
-      font-size: 11px;
-    }
-
-    .admin-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .admin-name {
-      color: #475569;
-      font-size: 13px;
-      font-weight: 700;
-    }
-
-    .logout-btn {
-      border: 1px solid #fecaca;
-      background: #fff;
-      color: #dc2626;
-      border-radius: 11px;
-      padding: 9px 14px;
-      font-weight: 800;
-    }
-
-    .layout {
-      display: flex;
-      min-height: calc(100vh - 72px);
-    }
-
-    /* =========================
-       Sidebar
-       ========================= */
-
-    .sidebar {
-      width: 240px;
-      background: #0f172a;
-      color: #fff;
-      padding: 22px 14px;
-      flex-shrink: 0;
-    }
-
-    .sidebar-title {
-      padding: 8px 12px 15px;
-      color: #94a3b8;
-      font-size: 11px;
-      font-weight: 800;
-    }
-
-    .nav-btn {
-      width: 100%;
-      border: 0;
-      background: transparent;
-      color: #cbd5e1;
-      padding: 12px 14px;
-      border-radius: 11px;
-      text-align: right;
-      margin-bottom: 5px;
-      font-size: 13px;
-      font-weight: 700;
-    }
-
-    .nav-btn:hover,
-    .nav-btn.active {
-      background: rgba(255,255,255,.09);
-      color: #fff;
-    }
-
-    .nav-icon {
-      display: inline-block;
-      width: 25px;
-    }
-
-    /* =========================
-       Main
-       ========================= */
-
-    .main {
-      flex: 1;
-      padding: 28px;
-      min-width: 0;
-    }
-
-    .page-title {
-      margin-bottom: 23px;
-    }
-
-    .page-title h2 {
-      margin: 0;
-      font-size: 25px;
-      font-weight: 900;
-    }
-
-    .page-title p {
-      margin: 5px 0 0;
-      color: #64748b;
-      font-size: 13px;
-    }
-
-    /* =========================
-       Stats
-       ========================= */
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0,1fr));
-      gap: 15px;
-      margin-bottom: 25px;
-    }
-
-    .stat-card {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 18px;
-      padding: 18px;
-      display: flex;
-      align-items: center;
-      gap: 13px;
-    }
-
-    .stat-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      background: #f0fdfa;
-      color: #0f766e;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      flex-shrink: 0;
-    }
-
-    .stat-label {
-      color: #64748b;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .stat-value {
-      font-size: 24px;
-      font-weight: 900;
-      margin-top: 2px;
-    }
-
-    /* =========================
-       Sections
-       ========================= */
-
-    .section {
-      display: none;
-    }
-
-    .section.active {
-      display: block;
-    }
-
-    .panel {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 20px;
-      padding: 22px;
-      margin-bottom: 20px;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 15px;
-      margin-bottom: 18px;
-      flex-wrap: wrap;
-    }
-
-    .panel-header h3 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 900;
-    }
-
-    .panel-header p {
-      margin: 4px 0 0;
-      color: #64748b;
-      font-size: 12px;
-    }
-
-    .add-btn {
-      border: 0;
-      background: #0f766e;
-      color: #fff;
-      border-radius: 11px;
-      padding: 10px 15px;
-      font-weight: 800;
-      font-size: 13px;
-    }
-
-    /* =========================
-       Doctor table
-       ========================= */
-
-    .table-wrap {
-      width: 100%;
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 750px;
-    }
-
-    th {
-      text-align: right;
-      background: #f8fafc;
-      color: #475569;
-      font-size: 11px;
-      padding: 12px;
-      border-bottom: 1px solid #e2e8f0;
-      white-space: nowrap;
-    }
-
-    td {
-      padding: 13px 12px;
-      border-bottom: 1px solid #f1f5f9;
-      font-size: 12px;
-      vertical-align: middle;
-    }
-
-    tr:hover td {
-      background: #fafafa;
-    }
-
-    .doctor-cell {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 190px;
-    }
-
-    .doctor-avatar {
-      width: 43px;
-      height: 43px;
-      border-radius: 12px;
-      object-fit: cover;
-      background: #ccfbf1;
-      flex-shrink: 0;
-    }
-
-    .doctor-avatar-placeholder {
-      width: 43px;
-      height: 43px;
-      border-radius: 12px;
-      background: #ccfbf1;
-      color: #0f766e;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 900;
-      flex-shrink: 0;
-    }
-
-    .doctor-name {
-      font-weight: 800;
-      color: #0f172a;
-    }
-
-    .doctor-username {
-      color: #94a3b8;
-      font-size: 10px;
-      margin-top: 2px;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 20px;
-      font-size: 10px;
-      font-weight: 800;
-    }
-
-    .badge-green {
-      background: #dcfce7;
-      color: #166534;
-    }
-
-    .badge-red {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-
-    .action-btn {
-      border: 0;
-      border-radius: 8px;
-      padding: 7px 10px;
-      font-size: 11px;
-      font-weight: 800;
-      margin-left: 4px;
-    }
-
-    .edit-btn {
-      background: #e0f2fe;
-      color: #0369a1;
-    }
-
-    .disable-btn {
-      background: #fee2e2;
-      color: #b91c1c;
-    }
-
-    .enable-btn {
-      background: #dcfce7;
-      color: #166534;
-    }
-
-    /* =========================
-       Modal
-       ========================= */
-
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      background: rgba(15,23,42,.65);
-      backdrop-filter: blur(5px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .modal {
-      width: min(100%, 680px);
-      max-height: 92vh;
-      overflow-y: auto;
-      background: #fff;
-      border-radius: 22px;
-      box-shadow: 0 30px 80px rgba(0,0,0,.25);
-    }
-
-    .modal-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 15px;
-      padding: 20px 23px;
-      border-bottom: 1px solid #eef2f7;
-    }
-
-    .modal-header h3 {
-      margin: 0;
-      font-size: 19px;
-      font-weight: 900;
-    }
-
-    .close-btn {
-      border: 0;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: #f1f5f9;
-      color: #475569;
-      font-size: 22px;
-    }
-
-    .modal-body {
-      padding: 23px;
-    }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-    }
-
-    .form-grid .full {
-      grid-column: 1 / -1;
-    }
-
-    .switch-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border: 1px solid #e2e8f0;
-      border-radius: 13px;
-      padding: 12px 14px;
-    }
-
-    .switch-row span {
-      font-size: 13px;
-      font-weight: 800;
-    }
-
-    .switch-row input {
-      width: 19px;
-      height: 19px;
-      accent-color: #0f766e;
-    }
-
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-    }
-
-    .modal-actions button {
-      flex: 1;
-      border-radius: 12px;
-      padding: 12px;
-      font-weight: 800;
-      border: 0;
-    }
-
-    .save-btn {
-      background: #0f766e;
-      color: #fff;
-    }
-
-    .cancel-btn {
-      background: #f1f5f9;
-      color: #334155;
-    }
-
-    /* =========================
-       Empty
-       ========================= */
-
-    .empty {
-      text-align: center;
-      padding: 45px 20px;
-      color: #64748b;
-    }
-
-    .empty-icon {
-      font-size: 42px;
-      margin-bottom: 8px;
-    }
-
-    .empty strong {
-      display: block;
-      color: #334155;
-      font-size: 16px;
-    }
-
-    /* =========================
-       Toast
-       ========================= */
-
-    #toast {
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      z-index: 20000;
-      max-width: 360px;
-      padding: 13px 17px;
-      border-radius: 13px;
-      color: #fff;
-      font-size: 13px;
-      font-weight: 700;
-      box-shadow: 0 15px 35px rgba(0,0,0,.18);
-      opacity: 0;
-      transform: translateY(-10px);
-      pointer-events: none;
-      transition: .25s;
-    }
-
-    #toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* =========================
-       Responsive
-       ========================= */
-
-    @media (max-width: 1000px) {
-      .stats-grid {
-        grid-template-columns: repeat(2, minmax(0,1fr));
-      }
-    }
-
-    @media (max-width: 760px) {
-      .topbar {
-        padding: 11px 15px;
-      }
-
-      .admin-name {
-        display: none;
-      }
-
-      .layout {
-        display: block;
-      }
-
-      .sidebar {
-        width: 100%;
-        padding: 9px;
-        overflow-x: auto;
-        display: flex;
-        gap: 5px;
-      }
-
-      .sidebar-title {
-        display: none;
-      }
-
-      .nav-btn {
-        width: auto;
-        white-space: nowrap;
-        margin: 0;
-      }
-
-      .main {
-        padding: 17px;
-      }
-
-      .stats-grid {
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-      }
-
-      .stat-card {
-        padding: 13px;
-      }
-
-      .stat-value {
-        font-size: 20px;
-      }
-
-      .panel {
-        padding: 15px;
-      }
-
-      .form-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .form-grid .full {
-        grid-column: auto;
-      }
-
-      .login-card {
-        padding: 25px 20px;
-      }
-    }
-
-    @media (max-width: 460px) {
-      .stats-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .topbar-title {
-        font-size: 15px;
-      }
-
-      .topbar-subtitle {
-        display: none;
-      }
-    }
+    *{box-sizing:border-box}
+    body{margin:0;background:#f1f5f9;color:#0f172a;font-family:"Cairo",sans-serif}
+    button,input,select,textarea{font-family:inherit}
+    button{cursor:pointer}
+    .hidden{display:none!important}
+    #loginPage{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at top right,rgba(20,184,166,.15),transparent 35%),radial-gradient(circle at bottom left,rgba(14,165,233,.12),transparent 35%),#f8fafc}
+    .login-card{width:min(100%,440px);background:#fff;border-radius:26px;padding:35px;box-shadow:0 25px 70px rgba(15,23,42,.12);border:1px solid #e2e8f0}
+    .brand{text-align:center;margin-bottom:28px}.brand-icon{width:70px;height:70px;margin:0 auto 14px;border-radius:22px;display:flex;align-items:center;justify-content:center;background:#0f766e;color:#fff;font-size:34px;box-shadow:0 12px 30px rgba(15,118,110,.25)}.brand h1{margin:0;font-size:25px;font-weight:900}.brand p{margin:7px 0 0;color:#64748b;font-size:13px}
+    .field{margin-bottom:16px}.field label{display:block;margin-bottom:7px;font-size:13px;font-weight:800;color:#334155}.field input,.field select,.field textarea{width:100%;border:1px solid #dbe3ec;border-radius:13px;padding:12px 14px;outline:none;background:#fff;color:#0f172a;font-size:14px}.field input:focus,.field select:focus,.field textarea:focus{border-color:#0f766e;box-shadow:0 0 0 3px rgba(15,118,110,.09)}
+    .primary-btn{width:100%;border:0;border-radius:13px;padding:13px 18px;background:#0f766e;color:#fff;font-weight:800;font-size:15px}.primary-btn:hover{background:#115e59}.error-box{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:12px;padding:11px 13px;margin-bottom:15px;font-size:13px;font-weight:700}
+    #dashboardPage{min-height:100vh}.topbar{background:#fff;border-bottom:1px solid #e2e8f0;min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:12px 28px;position:sticky;top:0;z-index:100}.topbar-brand{display:flex;align-items:center;gap:12px}.topbar-logo{width:46px;height:46px;border-radius:14px;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px}.topbar-title{font-weight:900;font-size:18px}.topbar-subtitle{color:#64748b;font-size:11px}.admin-actions{display:flex;align-items:center;gap:10px}.admin-name{color:#475569;font-size:13px;font-weight:700}.logout-btn{border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:11px;padding:9px 14px;font-weight:800}
+    .layout{display:flex;min-height:calc(100vh - 72px)}.sidebar{width:240px;background:#0f172a;color:#fff;padding:22px 14px;flex-shrink:0}.sidebar-title{padding:8px 12px 15px;color:#94a3b8;font-size:11px;font-weight:800}.nav-btn{width:100%;border:0;background:transparent;color:#cbd5e1;padding:12px 14px;border-radius:11px;text-align:right;margin-bottom:5px;font-size:13px;font-weight:700}.nav-btn:hover,.nav-btn.active{background:rgba(255,255,255,.09);color:#fff}.nav-icon{display:inline-block;width:25px}
+    .main{flex:1;padding:28px;min-width:0}.page-title{margin-bottom:23px}.page-title h2{margin:0;font-size:25px;font-weight:900}.page-title p{margin:5px 0 0;color:#64748b;font-size:13px}.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;margin-bottom:25px}.stat-card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;display:flex;align-items:center;gap:13px}.stat-icon{width:48px;height:48px;border-radius:14px;background:#f0fdfa;color:#0f766e;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}.stat-label{color:#64748b;font-size:11px;font-weight:700}.stat-value{font-size:24px;font-weight:900;margin-top:2px}
+    .section{display:none}.section.active{display:block}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:22px;margin-bottom:20px}.panel-header{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:18px;flex-wrap:wrap}.panel-header h3{margin:0;font-size:18px;font-weight:900}.panel-header p{margin:4px 0 0;color:#64748b;font-size:12px}.add-btn{border:0;background:#0f766e;color:#fff;border-radius:11px;padding:10px 15px;font-weight:800;font-size:13px}
+    .table-wrap{width:100%;overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:750px}th{text-align:right;background:#f8fafc;color:#475569;font-size:11px;padding:12px;border-bottom:1px solid #e2e8f0;white-space:nowrap}td{padding:13px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;vertical-align:middle}tr:hover td{background:#fafafa}.doctor-cell{display:flex;align-items:center;gap:10px;min-width:190px}.doctor-avatar{width:43px;height:43px;border-radius:12px;object-fit:cover;background:#ccfbf1;flex-shrink:0}.doctor-avatar-placeholder{width:43px;height:43px;border-radius:12px;background:#ccfbf1;color:#0f766e;display:flex;align-items:center;justify-content:center;font-weight:900;flex-shrink:0}.doctor-name{font-weight:800;color:#0f172a}.badge{display:inline-block;padding:4px 8px;border-radius:20px;font-size:10px;font-weight:800}.badge-green{background:#dcfce7;color:#166534}.badge-red{background:#fee2e2;color:#991b1b}.action-btn{border:0;border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;margin-left:4px}.edit-btn{background:#e0f2fe;color:#0369a1}.disable-btn{background:#fee2e2;color:#b91c1c}.enable-btn{background:#dcfce7;color:#166534}
+    .modal-overlay{position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.65);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:20px}.modal{width:min(100%,680px);max-height:92vh;overflow-y:auto;background:#fff;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.25)}.modal-header{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:20px 23px;border-bottom:1px solid #eef2f7}.modal-header h3{margin:0;font-size:19px;font-weight:900}.close-btn{border:0;width:36px;height:36px;border-radius:50%;background:#f1f5f9;color:#475569;font-size:22px}.modal-body{padding:23px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid .full{grid-column:1 / -1}.switch-row{display:flex;align-items:center;justify-content:space-between;border:1px solid #e2e8f0;border-radius:13px;padding:12px 14px}.switch-row span{font-size:13px;font-weight:800}.switch-row input{width:19px;height:19px;accent-color:#0f766e}.modal-actions{display:flex;gap:10px;margin-top:20px}.modal-actions button{flex:1;border-radius:12px;padding:12px;font-weight:800;border:0}.save-btn{background:#0f766e;color:#fff}.cancel-btn{background:#f1f5f9;color:#334155}
+    .image-upload{border:1px dashed #cbd5e1;border-radius:14px;padding:14px;background:#f8fafc}.image-upload input[type=file]{padding:10px;background:#fff}.image-preview-wrap{margin-top:10px;display:none;align-items:center;gap:12px}.image-preview-wrap.show{display:flex}.image-preview{width:84px;height:84px;object-fit:cover;border-radius:16px;border:1px solid #e2e8f0;background:#fff}.image-note{color:#64748b;font-size:11px;line-height:1.8}
+    .empty{text-align:center;padding:45px 20px;color:#64748b}.empty-icon{font-size:42px;margin-bottom:8px}.empty strong{display:block;color:#334155;font-size:16px}
+    #toast{position:fixed;top:20px;left:20px;z-index:20000;max-width:360px;padding:13px 17px;border-radius:13px;color:#fff;font-size:13px;font-weight:700;box-shadow:0 15px 35px rgba(0,0,0,.18);opacity:0;transform:translateY(-10px);pointer-events:none;transition:.25s}#toast.show{opacity:1;transform:translateY(0)}
+    @media (max-width:1000px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:760px){.topbar{padding:11px 15px}.admin-name{display:none}.layout{display:block}.sidebar{width:100%;padding:9px;overflow-x:auto;display:flex;gap:5px}.sidebar-title{display:none}.nav-btn{width:auto;white-space:nowrap;margin:0}.main{padding:17px}.stats-grid{grid-template-columns:1fr 1fr;gap:10px}.stat-card{padding:13px}.stat-value{font-size:20px}.panel{padding:15px}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.login-card{padding:25px 20px}}
+    @media (max-width:460px){.stats-grid{grid-template-columns:1fr}.topbar-title{font-size:15px}.topbar-subtitle{display:none}}
   </style>
 </head>
-
 <body>
 
-  <!-- ======================================================
-       LOGIN PAGE
-       ====================================================== -->
-
-  <section id="loginPage">
-
-    <div class="login-card">
-
-      <div class="brand">
-
-        <div class="brand-icon">
-          ♥
-        </div>
-
-        <h1>موعدي</h1>
-
-        <p>
-          لوحة الإدارة المركزية
-        </p>
-
-      </div>
-
-      <div id="loginError" class="error-box hidden"></div>
-
-      <form id="adminLoginForm">
-
-        <div class="field">
-          <label>اسم المستخدم</label>
-
-          <input
-            id="adminUsername"
-            type="text"
-            required
-            autocomplete="username"
-            placeholder="اسم مستخدم الأدمن"
-          >
-        </div>
-
-        <div class="field">
-          <label>كلمة المرور</label>
-
-          <input
-            id="adminPassword"
-            type="password"
-            required
-            autocomplete="current-password"
-            placeholder="كلمة المرور"
-          >
-        </div>
-
-        <button
-          id="loginSubmit"
-          class="primary-btn"
-          type="submit"
-        >
-          تسجيل الدخول
-        </button>
-
-      </form>
-
+<section id="loginPage">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-icon">♥</div>
+      <h1>موعدي</h1>
+      <p>لوحة الإدارة المركزية</p>
     </div>
-
-  </section>
-
-
-  <!-- ======================================================
-       DASHBOARD
-       ====================================================== -->
-
-  <section id="dashboardPage" class="hidden">
-
-    <!-- TOP BAR -->
-
-    <header class="topbar">
-
-      <div class="topbar-brand">
-
-        <div class="topbar-logo">
-          ♥
-        </div>
-
-        <div>
-          <div class="topbar-title">
-            لوحة إدارة موعدي
-          </div>
-
-          <div class="topbar-subtitle">
-            منصة الحجز الطبي
-          </div>
-        </div>
-
-      </div>
-
-      <div class="admin-actions">
-
-        <span id="adminName" class="admin-name">
-          المدير
-        </span>
-
-        <button
-          id="logoutBtn"
-          class="logout-btn"
-        >
-          تسجيل الخروج
-        </button>
-
-      </div>
-
-    </header>
-
-
-    <div class="layout">
-
-      <!-- SIDEBAR -->
-
-      <aside class="sidebar">
-
-        <div class="sidebar-title">
-          القائمة الرئيسية
-        </div>
-
-        <button
-          class="nav-btn active"
-          data-section="overview"
-        >
-          <span class="nav-icon">📊</span>
-          الرئيسية
-        </button>
-
-        <button
-          class="nav-btn"
-          data-section="doctors"
-        >
-          <span class="nav-icon">👨‍⚕️</span>
-          الأطباء
-        </button>
-
-        <button
-          class="nav-btn"
-          data-section="appointments"
-        >
-          <span class="nav-icon">📅</span>
-          المواعيد
-        </button>
-
-        <button
-          class="nav-btn"
-          data-section="patients"
-        >
-          <span class="nav-icon">👥</span>
-          المرضى
-        </button>
-
-        <button
-          class="nav-btn"
-          data-section="services"
-        >
-          <span class="nav-icon">🩺</span>
-          الخدمات
-        </button>
-
-        <button
-          class="nav-btn"
-          data-section="records"
-        >
-          <span class="nav-icon">📋</span>
-          السجلات الطبية
-        </button>
-
-        <button
-          class="nav-btn"
-          data-section="ads"
-        >
-          <span class="nav-icon">📢</span>
-          الإعلانات
-        </button>
-
-      </aside>
-
-
-      <!-- MAIN -->
-
-      <main class="main">
-
-
-        <!-- =========================
-             OVERVIEW
-             ========================= -->
-
-        <section
-          id="section-overview"
-          class="section active"
-        >
-
-          <div class="page-title">
-
-            <h2>
-              لوحة التحكم
-            </h2>
-
-            <p>
-              مرحبًا بك في لوحة إدارة منصة موعدي
-            </p>
-
-          </div>
-
-
-          <div class="stats-grid">
-
-            <div class="stat-card">
-              <div class="stat-icon">👨‍⚕️</div>
-
-              <div>
-                <div class="stat-label">
-                  الأطباء
-                </div>
-
-                <div
-                  id="statDoctors"
-                  class="stat-value"
-                >
-                  0
-                </div>
-              </div>
-            </div>
-
-
-            <div class="stat-card">
-              <div class="stat-icon">📅</div>
-
-              <div>
-                <div class="stat-label">
-                  المواعيد
-                </div>
-
-                <div
-                  id="statAppointments"
-                  class="stat-value"
-                >
-                  0
-                </div>
-              </div>
-            </div>
-
-
-            <div class="stat-card">
-              <div class="stat-icon">👥</div>
-
-              <div>
-                <div class="stat-label">
-                  المرضى
-                </div>
-
-                <div
-                  id="statPatients"
-                  class="stat-value"
-                >
-                  0
-                </div>
-              </div>
-            </div>
-
-
-            <div class="stat-card">
-              <div class="stat-icon">🩺</div>
-
-              <div>
-                <div class="stat-label">
-                  الخدمات
-                </div>
-
-                <div
-                  id="statServices"
-                  class="stat-value"
-                >
-                  0
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-
-          <div class="panel">
-
-            <div class="panel-header">
-
-              <div>
-                <h3>
-                  حالة المنصة
-                </h3>
-
-                <p>
-                  معلومات الاتصال بالخادم وقاعدة البيانات
-                </p>
-              </div>
-
-            </div>
-
-            <div
-              id="systemStatus"
-              style="
-                padding:16px;
-                border-radius:14px;
-                background:#f8fafc;
-                color:#64748b;
-                font-size:13px;
-              "
-            >
-              جارٍ فحص النظام...
-            </div>
-
-          </div>
-
-        </section>
-
-
-        <!-- =========================
-             DOCTORS
-             ========================= -->
-
-        <section
-          id="section-doctors"
-          class="section"
-        >
-
-          <div class="page-title">
-
-            <h2>
-              إدارة الأطباء
-            </h2>
-
-            <p>
-              إضافة وتعديل وإدارة الأطباء المتاحين للحجز
-            </p>
-
-          </div>
-
-
-          <div class="panel">
-
-            <div class="panel-header">
-
-              <div>
-                <h3>
-                  قائمة الأطباء
-                </h3>
-
-                <p>
-                  الأطباء الموجودون في قاعدة البيانات
-                </p>
-              </div>
-
-              <button
-                id="addDoctorBtn"
-                class="add-btn"
-              >
-                ＋ إضافة طبيب
-              </button>
-
-            </div>
-
-
-            <div class="table-wrap">
-
-              <table>
-
-                <thead>
-
-                  <tr>
-                    <th>الطبيب</th>
-                    <th>التخصص</th>
-                    <th>المنطقة</th>
-                    <th>الهاتف</th>
-                    <th>الحالة</th>
-                    <th>الإجراءات</th>
-                  </tr>
-
-                </thead>
-
-                <tbody id="doctorsTableBody">
-                </tbody>
-
-              </table>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        <!-- =========================
-             APPOINTMENTS
-             ========================= -->
-
-        <section
-          id="section-appointments"
-          class="section"
-        >
-
-          <div class="page-title">
-
-            <h2>
-              المواعيد
-            </h2>
-
-            <p>
-              إدارة ومتابعة حجوزات المرضى
-            </p>
-
-          </div>
-
-          <div class="panel">
-
-            <div class="empty">
-
-              <div class="empty-icon">
-                📅
-              </div>
-
-              <strong>
-                إدارة المواعيد
-              </strong>
-
-              <div style="margin-top:5px;font-size:12px;">
-                سنقوم بتفعيل هذه الصفحة في المرحلة التالية.
-              </div>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        <!-- =========================
-             PATIENTS
-             ========================= -->
-
-        <section
-          id="section-patients"
-          class="section"
-        >
-
-          <div class="page-title">
-
-            <h2>
-              المرضى
-            </h2>
-
-            <p>
-              إدارة حسابات المرضى
-            </p>
-
-          </div>
-
-          <div class="panel">
-
-            <div class="empty">
-
-              <div class="empty-icon">
-                👥
-              </div>
-
-              <strong>
-                إدارة المرضى
-              </strong>
-
-              <div style="margin-top:5px;font-size:12px;">
-                سيتم تفعيلها في المرحلة التالية.
-              </div>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        <!-- =========================
-             SERVICES
-             ========================= -->
-
-        <section
-          id="section-services"
-          class="section"
-        >
-
-          <div class="page-title">
-
-            <h2>
-              الخدمات الطبية
-            </h2>
-
-            <p>
-              الخدمات التي يمكن للمريض حجزها
-            </p>
-
-          </div>
-
-          <div class="panel">
-
-            <div class="empty">
-
-              <div class="empty-icon">
-                🩺
-              </div>
-
-              <strong>
-                إدارة الخدمات
-              </strong>
-
-              <div style="margin-top:5px;font-size:12px;">
-                سيتم تفعيلها في المرحلة التالية.
-              </div>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        <!-- =========================
-             MEDICAL RECORDS
-             ========================= -->
-
-        <section
-          id="section-records"
-          class="section"
-        >
-
-          <div class="page-title">
-
-            <h2>
-              السجلات الطبية
-            </h2>
-
-            <p>
-              متابعة السجلات الطبية للمرضى
-            </p>
-
-          </div>
-
-          <div class="panel">
-
-            <div class="empty">
-
-              <div class="empty-icon">
-                📋
-              </div>
-
-              <strong>
-                السجلات الطبية
-              </strong>
-
-              <div style="margin-top:5px;font-size:12px;">
-                سيتم تفعيلها في المرحلة التالية.
-              </div>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        <!-- =========================
-             ADS
-             ========================= -->
-
-        <section
-          id="section-ads"
-          class="section"
-        >
-
-          <div class="page-title">
-
-            <h2>
-              الإعلانات
-            </h2>
-
-            <p>
-              إدارة المساحات الإعلانية داخل منصة موعدي
-            </p>
-
-          </div>
-
-          <div class="panel">
-
-            <div class="empty">
-
-              <div class="empty-icon">
-                📢
-              </div>
-
-              <strong>
-                الإعلانات المدفوعة
-              </strong>
-
-              <div style="margin-top:5px;font-size:12px;">
-                سيتم تفعيل إدارة الإعلانات في المرحلة التالية.
-              </div>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-      </main>
-
-    </div>
-
-  </section>
-
-
-  <!-- ======================================================
-       DOCTOR MODAL
-       ====================================================== -->
-
-  <div
-    id="doctorModalOverlay"
-    class="modal-overlay hidden"
-  >
-
-    <div class="modal">
-
-      <div class="modal-header">
-
-        <h3 id="doctorModalTitle">
-          إضافة طبيب
-        </h3>
-
-        <button
-          id="closeDoctorModal"
-          class="close-btn"
-          type="button"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <div class="modal-body">
-
-        <form id="doctorForm">
-
-          <input
-            id="doctorId"
-            type="hidden"
-          >
-
-          <div class="form-grid">
-
-
-            <div class="field">
-
-              <label>
-                الاسم الكامل *
-              </label>
-
-              <input
-                id="doctorFullName"
-                required
-                placeholder="د. أحمد محمد"
-              >
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                اسم المستخدم *
-              </label>
-
-              <input
-                id="doctorUsername"
-                required
-                placeholder="doctor123"
-              >
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                كلمة المرور
-                <span
-                  id="passwordHint"
-                  style="font-weight:400;color:#94a3b8;"
-                >
-                  (مطلوبة عند الإضافة)
-                </span>
-              </label>
-
-              <input
-                id="doctorPassword"
-                type="password"
-                placeholder="كلمة المرور"
-              >
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                رقم الهاتف
-              </label>
-
-              <input
-                id="doctorPhone"
-                inputmode="tel"
-                placeholder="09xxxxxxxx"
-              >
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                البريد الإلكتروني
-              </label>
-
-              <input
-                id="doctorEmail"
-                type="email"
-                placeholder="doctor@example.com"
-              >
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                التخصص
-              </label>
-
-              <input
-                id="doctorSpecialty"
-                placeholder="الباطنية"
-              >
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                المنطقة
-              </label>
-
-              <input
-                id="doctorArea"
-                placeholder="الأبيض"
-              >
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                رابط صورة الطبيب
-              </label>
-
-              <input
-                id="doctorImage"
-                placeholder="https://..."
-              >
-
-            </div>
-
-
-            <div class="field full">
-
-              <label>
-                نبذة عن الطبيب
-              </label>
-
-              <textarea
-                id="doctorBio"
-                rows="4"
-                placeholder="نبذة مختصرة عن الطبيب وخبرته..."
-              ></textarea>
-
-            </div>
-
-
-            <div class="full">
-
-              <div class="switch-row">
-
-                <span>
-                  الطبيب نشط
-                </span>
-
-                <input
-                  id="doctorActive"
-                  type="checkbox"
-                  checked
-                >
-
-              </div>
-
-            </div>
-
-
-            <div class="full">
-
-              <div class="switch-row">
-
-                <span>
-                  متاح للحجز
-                </span>
-
-                <input
-                  id="doctorAvailable"
-                  type="checkbox"
-                  checked
-                >
-
-              </div>
-
-            </div>
-
-
-          </div>
-
-
-          <div class="modal-actions">
-
-            <button
-              id="cancelDoctorBtn"
-              class="cancel-btn"
-              type="button"
-            >
-              إلغاء
-            </button>
-
-            <button
-              id="saveDoctorBtn"
-              class="save-btn"
-              type="submit"
-            >
-              حفظ الطبيب
-            </button>
-
-          </div>
-
-        </form>
-
-      </div>
-
-    </div>
-
+    <div id="loginError" class="error-box hidden"></div>
+    <form id="adminLoginForm">
+      <div class="field"><label>اسم المستخدم</label><input id="adminUsername" type="text" required autocomplete="username" placeholder="اسم مستخدم الأدمن"></div>
+      <div class="field"><label>كلمة المرور</label><input id="adminPassword" type="password" required autocomplete="current-password" placeholder="كلمة المرور"></div>
+      <button id="loginSubmit" class="primary-btn" type="submit">تسجيل الدخول</button>
+    </form>
   </div>
+</section>
 
+<section id="dashboardPage" class="hidden">
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="topbar-logo">♥</div>
+      <div><div class="topbar-title">لوحة إدارة موعدي</div><div class="topbar-subtitle">منصة الحجز الطبي</div></div>
+    </div>
+    <div class="admin-actions"><span id="adminName" class="admin-name">المدير</span><button id="logoutBtn" class="logout-btn">تسجيل الخروج</button></div>
+  </header>
 
-  <div id="toast"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-title">القائمة الرئيسية</div>
+      <button class="nav-btn active" data-section="overview"><span class="nav-icon">📊</span>الرئيسية</button>
+      <button class="nav-btn" data-section="doctors"><span class="nav-icon">👨‍⚕️</span>الأطباء</button>
+      <button class="nav-btn" data-section="appointments"><span class="nav-icon">📅</span>المواعيد</button>
+      <button class="nav-btn" data-section="patients"><span class="nav-icon">👥</span>المرضى</button>
+      <button class="nav-btn" data-section="services"><span class="nav-icon">🩺</span>الخدمات</button>
+      <button class="nav-btn" data-section="records"><span class="nav-icon">📋</span>السجلات الطبية</button>
+      <button class="nav-btn" data-section="ads"><span class="nav-icon">📢</span>الإعلانات</button>
+    </aside>
 
+    <main class="main">
+      <section id="section-overview" class="section active">
+        <div class="page-title"><h2>لوحة التحكم</h2><p>مرحبًا بك في لوحة إدارة منصة موعدي</p></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon">👨‍⚕️</div><div><div class="stat-label">الأطباء</div><div id="statDoctors" class="stat-value">0</div></div></div>
+          <div class="stat-card"><div class="stat-icon">📅</div><div><div class="stat-label">المواعيد</div><div id="statAppointments" class="stat-value">0</div></div></div>
+          <div class="stat-card"><div class="stat-icon">👥</div><div><div class="stat-label">المرضى</div><div id="statPatients" class="stat-value">0</div></div></div>
+          <div class="stat-card"><div class="stat-icon">🩺</div><div><div class="stat-label">الخدمات</div><div id="statServices" class="stat-value">0</div></div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><div><h3>حالة المنصة</h3><p>معلومات الاتصال بالخادم وقاعدة البيانات</p></div></div><div id="systemStatus" style="padding:16px;border-radius:14px;background:#f8fafc;color:#64748b;font-size:13px">جارٍ فحص النظام...</div></div>
+      </section>
 
-  <!-- ======================================================
-       JAVASCRIPT
-       ====================================================== -->
+      <section id="section-doctors" class="section">
+        <div class="page-title"><h2>إدارة الأطباء</h2><p>إضافة وتعديل وإدارة الأطباء المتاحين للحجز</p></div>
+        <div class="panel">
+          <div class="panel-header"><div><h3>قائمة الأطباء</h3><p>الأطباء الموجودون في قاعدة البيانات</p></div><button id="addDoctorBtn" class="add-btn">＋ إضافة طبيب</button></div>
+          <div class="table-wrap"><table><thead><tr><th>الطبيب</th><th>التخصص</th><th>المنطقة</th><th>الهاتف</th><th>الحالة</th><th>الإجراءات</th></tr></thead><tbody id="doctorsTableBody"></tbody></table></div>
+        </div>
+      </section>
 
-  <script>
+      <section id="section-appointments" class="section"><div class="page-title"><h2>المواعيد</h2><p>إدارة ومتابعة حجوزات المرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">📅</div><strong>إدارة المواعيد</strong><div style="margin-top:5px;font-size:12px;">سنقوم بتفعيل هذه الصفحة في المرحلة التالية.</div></div></div></section>
+      <section id="section-patients" class="section"><div class="page-title"><h2>المرضى</h2><p>إدارة حسابات المرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">👥</div><strong>إدارة المرضى</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
+      <section id="section-services" class="section"><div class="page-title"><h2>الخدمات الطبية</h2><p>الخدمات التي يمكن للمريض حجزها</p></div><div class="panel"><div class="empty"><div class="empty-icon">🩺</div><strong>إدارة الخدمات</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
+      <section id="section-records" class="section"><div class="page-title"><h2>السجلات الطبية</h2><p>متابعة السجلات الطبية للمرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">📋</div><strong>السجلات الطبية</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
+      <section id="section-ads" class="section"><div class="page-title"><h2>الإعلانات</h2><p>إدارة المساحات الإعلانية داخل منصة موعدي</p></div><div class="panel"><div class="empty"><div class="empty-icon">📢</div><strong>الإعلانات المدفوعة</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيل إدارة الإعلانات في المرحلة التالية.</div></div></div></section>
+    </main>
+  </div>
+</section>
 
-    "use strict";
+<div id="doctorModalOverlay" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header"><h3 id="doctorModalTitle">إضافة طبيب</h3><button id="closeDoctorModal" class="close-btn" type="button">×</button></div>
+    <div class="modal-body">
+      <form id="doctorForm">
+        <input id="doctorId" type="hidden">
+        <div class="form-grid">
+          <div class="field"><label>الاسم الكامل *</label><input id="doctorFullName" required placeholder="د. أحمد محمد"></div>
+          <div class="field"><label>رقم الهاتف</label><input id="doctorPhone" inputmode="tel" placeholder="09xxxxxxxx"></div>
+          <div class="field"><label>البريد الإلكتروني</label><input id="doctorEmail" type="email" placeholder="doctor@example.com"></div>
+          <div class="field"><label>التخصص *</label><input id="doctorSpecialty" required placeholder="الباطنية"></div>
+          <div class="field"><label>المنطقة</label><input id="doctorArea" placeholder="الأبيض"></div>
+          <div class="field full"><label>صورة الطبيب</label><div class="image-upload"><input id="doctorImageFile" type="file" accept="image/*"><div class="image-preview-wrap" id="imagePreviewWrap"><img id="doctorImagePreview" class="image-preview" alt="معاينة صورة الطبيب"><div class="image-note">يمكنك اختيار صورة من جهازك. سيتم تصغيرها تلقائيًا قبل الحفظ.</div></div></div></div>
+          <div class="field full"><label>نبذة عن الطبيب</label><textarea id="doctorBio" rows="4" placeholder="نبذة مختصرة عن الطبيب وخبرته..."></textarea></div>
+          <div class="full"><div class="switch-row"><span>الطبيب نشط</span><input id="doctorActive" type="checkbox" checked></div></div>
+        </div>
+        <div class="modal-actions"><button id="cancelDoctorBtn" class="cancel-btn" type="button">إلغاء</button><button id="saveDoctorBtn" class="save-btn" type="submit">حفظ الطبيب</button></div>
+      </form>
+    </div>
+  </div>
+</div>
 
-    const API = "/api";
+<div id="toast"></div>
 
-    const TOKEN_KEY = "medical_booking_token";
-    const REFRESH_KEY = "medical_booking_refresh_token";
-    const USER_KEY = "medical_booking_user";
+<script>
+"use strict";
 
-    let doctors = [];
-    let editingDoctor = null;
+const API = "/api";
+const TOKEN_KEY = "medical_booking_token";
+const REFRESH_KEY = "medical_booking_refresh_token";
+const USER_KEY = "medical_booking_user";
 
+let doctors = [];
+let editingDoctor = null;
+let pendingImageData = "";
 
-    /* ======================================================
-       Helpers
-       ====================================================== */
+function $(id){ return document.getElementById(id); }
+function getToken(){ return localStorage.getItem(TOKEN_KEY) || ""; }
+function getUser(){ try{return JSON.parse(localStorage.getItem(USER_KEY)||"null")}catch{return null} }
+function escapeHtml(value){return String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;")}
 
-    function $(id) {
-      return document.getElementById(id);
-    }
+function showToast(message,type="success"){
+  const toast=$("toast");
+  toast.textContent=message;
+  toast.style.background=type==="error"?"#dc2626":"#0f766e";
+  toast.classList.add("show");
+  clearTimeout(window.toastTimer);
+  window.toastTimer=setTimeout(()=>toast.classList.remove("show"),3500);
+}
 
+async function api(path,options={}){
+  const headers={...(options.headers||{})};
+  if(options.body && !headers["Content-Type"]) headers["Content-Type"]="application/json";
+  const token=getToken();
+  if(token) headers.Authorization=`Bearer ${token}`;
+  const response=await fetch(API+path,{...options,headers});
+  let data=null;
+  try{data=await response.json()}catch{data=null}
+  if(!response.ok){
+    const error=new Error(data?.error||data?.message||"حدث خطأ في الطلب.");
+    error.status=response.status;error.data=data;throw error;
+  }
+  return data;
+}
 
-    function escapeHtml(value) {
+async function login(event){
+  event.preventDefault();
+  const username=$("adminUsername").value.trim();
+  const password=$("adminPassword").value;
+  const errorBox=$("loginError");
+  errorBox.classList.add("hidden");
+  const button=$("loginSubmit");
+  button.disabled=true;button.textContent="جارٍ تسجيل الدخول...";
+  try{
+    const data=await api("/staff/login",{method:"POST",body:JSON.stringify({username,password})});
+    if(data.token) localStorage.setItem(TOKEN_KEY,data.token);
+    if(data.refresh_token) localStorage.setItem(REFRESH_KEY,data.refresh_token);
+    if(data.user) localStorage.setItem(USER_KEY,JSON.stringify(data.user));
+    const user=data.user||{};
+    if(user.role && user.role!=="admin") throw new Error("هذا الحساب ليس حساب مدير.");
+    showDashboard();
+    await initializeDashboard();
+    showToast("تم تسجيل الدخول إلى لوحة الإدارة.");
+  }catch(error){
+    localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(REFRESH_KEY);localStorage.removeItem(USER_KEY);
+    errorBox.textContent=error.message||"تعذر تسجيل الدخول.";errorBox.classList.remove("hidden");
+  }finally{button.disabled=false;button.textContent="تسجيل الدخول"}
+}
 
-      return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+function showDashboard(){
+  $("loginPage").classList.add("hidden");
+  $("dashboardPage").classList.remove("hidden");
+  const user=getUser();
+  $("adminName").textContent=user?.full_name||user?.username||"المدير";
+}
+function showLogin(){$("dashboardPage").classList.add("hidden");$("doctorModalOverlay").classList.add("hidden");$("loginPage").classList.remove("hidden")}
 
-    }
+async function logout(){
+  try{if(getToken()) await api("/logout",{method:"POST"})}catch{}
+  localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(REFRESH_KEY);localStorage.removeItem(USER_KEY);showLogin();showToast("تم تسجيل الخروج.");
+}
 
+function setupNavigation(){
+  document.querySelectorAll(".nav-btn").forEach(button=>button.addEventListener("click",()=>{
+    document.querySelectorAll(".nav-btn").forEach(btn=>btn.classList.remove("active"));button.classList.add("active");
+    document.querySelectorAll(".section").forEach(section=>section.classList.remove("active"));
+    const section=$("section-"+button.dataset.section);if(section) section.classList.add("active");
+    if(button.dataset.section==="doctors") loadDoctors();
+    if(button.dataset.section==="overview") loadStats();
+  }));
+}
 
-    function getToken() {
-      return localStorage.getItem(TOKEN_KEY) || "";
-    }
+async function loadSystemStatus(){
+  const box=$("systemStatus");
+  try{
+    const data=await api("/health");
+    box.innerHTML=`<div style="display:flex;align-items:center;gap:10px;color:#166534;font-weight:800"><span style="font-size:20px">●</span>النظام يعمل بشكل طبيعي</div><div style="margin-top:9px;color:#64748b;font-size:12px">قاعدة البيانات: ${escapeHtml(data.database||"غير معروف")}</div><div style="margin-top:4px;color:#64748b;font-size:12px">PostgreSQL: ${data.postgres?"متصل":"غير متصل"}</div><div style="margin-top:4px;color:#64748b;font-size:12px">CMS: ${data.cms?"مفعل":"غير مفعل"}</div>`;
+  }catch(error){box.innerHTML=`<div style="color:#b91c1c;font-weight:800">● تعذر الاتصال بالخادم</div><div style="margin-top:5px;font-size:12px">${escapeHtml(error.message)}</div>`}
+}
 
+async function loadStats(){
+  try{
+    const data=await api("/admin/stats");
+    $("statDoctors").textContent=Number(data.active_doctors||0);
+    $("statAppointments").textContent=Number(data.total_appointments||0);
+    $("statPatients").textContent=Number(data.total_patients||0);
+    $("statServices").textContent=Number(data.active_services||0);
+  }catch(error){console.error("Stats error:",error)}
+}
 
-    function getUser() {
+async function loadDoctors(){
+  const tbody=$("doctorsTableBody");
+  tbody.innerHTML=`<tr><td colspan="6"><div class="empty">جارٍ تحميل الأطباء...</div></td></tr>`;
+  try{
+    const data=await api("/admin/doctors");
+    doctors=Array.isArray(data?.doctors)?data.doctors:[];
+    renderDoctors();
+    $("statDoctors").textContent=doctors.length;
+  }catch(error){
+    console.error("Doctors error:",error);
+    tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">⚠️</div><strong>تعذر تحميل الأطباء</strong><div style="margin-top:5px;font-size:12px">${escapeHtml(error.message)}</div></div></td></tr>`;
+  }
+}
 
-      try {
-        return JSON.parse(
-          localStorage.getItem(USER_KEY) || "null"
-        );
-      } catch {
-        return null;
-      }
+function renderDoctors(){
+  const tbody=$("doctorsTableBody");
+  if(!doctors.length){tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">👨‍⚕️</div><strong>لا يوجد أطباء حاليًا</strong><div style="margin-top:5px;font-size:12px">اضغط «إضافة طبيب» لإضافة أول طبيب.</div></div></td></tr>`;return;}
+  tbody.innerHTML=doctors.map(doctor=>{
+    const active=doctor.active!==false;
+    const name=doctor.full_name||"بدون اسم";
+    const initials=name.split(/\s+/).filter(Boolean).slice(0,2).map(word=>word.charAt(0)).join("")||"ط";
+    const image=doctor.image_url||"";
+    return `<tr><td><div class="doctor-cell">${image?`<img class="doctor-avatar" src="${escapeHtml(image)}" alt="${escapeHtml(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="doctor-avatar-placeholder" style="display:none">${escapeHtml(initials)}</div>`:`<div class="doctor-avatar-placeholder">${escapeHtml(initials)}</div>`}<div><div class="doctor-name">${escapeHtml(name)}</div></div></div></td><td>${escapeHtml(doctor.specialty||"—")}</td><td>${escapeHtml(doctor.area||"—")}</td><td>${escapeHtml(doctor.phone||"—")}</td><td>${active?`<span class="badge badge-green">نشط</span>`:`<span class="badge badge-red">معطل</span>`}</td><td><button class="action-btn edit-btn" onclick="editDoctor('${escapeHtml(doctor.id)}')">تعديل</button>${active?`<button class="action-btn disable-btn" onclick="toggleDoctor('${escapeHtml(doctor.id)}',false)">تعطيل</button>`:`<button class="action-btn enable-btn" onclick="toggleDoctor('${escapeHtml(doctor.id)}',true)">تفعيل</button>`}</td></tr>`;
+  }).join("");
+}
 
-    }
+function clearImagePreview(){
+  pendingImageData="";
+  $("doctorImagePreview").src="";
+  $("imagePreviewWrap").classList.remove("show");
+}
 
+function showImagePreview(dataUrl){
+  if(!dataUrl){clearImagePreview();return;}
+  pendingImageData=dataUrl;
+  $("doctorImagePreview").src=dataUrl;
+  $("imagePreviewWrap").classList.add("show");
+}
 
-    function showToast(message, type = "success") {
-
-      const toast = $("toast");
-
-      toast.textContent = message;
-
-      if (type === "error") {
-        toast.style.background = "#dc2626";
-      } else {
-        toast.style.background = "#0f766e";
-      }
-
-      toast.classList.add("show");
-
-      clearTimeout(window.toastTimer);
-
-      window.toastTimer = setTimeout(() => {
-        toast.classList.remove("show");
-      }, 3500);
-
-    }
-
-
-    async function api(path, options = {}) {
-
-      const headers = {
-        ...(options.headers || {})
+function resizeImage(file,maxSize=900,quality=.82){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error("تعذر قراءة الصورة."));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error("الصورة غير صالحة."));
+      img.onload=()=>{
+        let width=img.width,height=img.height;
+        const scale=Math.min(1,maxSize/Math.max(width,height));
+        width=Math.max(1,Math.round(width*scale));height=Math.max(1,Math.round(height*scale));
+        const canvas=document.createElement("canvas");canvas.width=width;canvas.height=height;
+        const ctx=canvas.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);ctx.drawImage(img,0,0,width,height);
+        resolve(canvas.toDataURL("image/jpeg",quality));
       };
-
-      if (
-        options.body &&
-        !headers["Content-Type"]
-      ) {
-        headers["Content-Type"] =
-          "application/json";
-      }
-
-      const token = getToken();
-
-      if (token) {
-        headers.Authorization =
-          `Bearer ${token}`;
-      }
-
-      const response = await fetch(
-        API + path,
-        {
-          ...options,
-          headers
-        }
-      );
-
-      let data = null;
-
-      try {
-        data = await response.json();
-      } catch {
-        data = null;
-      }
-
-      if (!response.ok) {
-
-        const error = new Error(
-          data?.error ||
-          data?.message ||
-          "حدث خطأ في الطلب."
-        );
-
-        error.status = response.status;
-        error.data = data;
-
-        throw error;
-      }
-
-      return data;
-
-    }
-
-
-    /* ======================================================
-       Login
-       ====================================================== */
-
-    async function login(event) {
-
-      event.preventDefault();
-
-      const username =
-        $("adminUsername").value.trim();
-
-      const password =
-        $("adminPassword").value;
-
-      const errorBox =
-        $("loginError");
-
-      errorBox.classList.add("hidden");
-
-      const button =
-        $("loginSubmit");
-
-      button.disabled = true;
-      button.textContent =
-        "جارٍ تسجيل الدخول...";
-
-      try {
-
-        /*
-          نستخدم staff/login لأن الطبيب والأدمن
-          من staff_users في الـ backend.
-        */
-
-        const data =
-          await api("/staff/login", {
-            method: "POST",
-            body: JSON.stringify({
-              username,
-              password
-            })
-          });
-
-        if (data.token) {
-          localStorage.setItem(
-            TOKEN_KEY,
-            data.token
-          );
-        }
-
-        if (data.refresh_token) {
-          localStorage.setItem(
-            REFRESH_KEY,
-            data.refresh_token
-          );
-        }
-
-        if (data.user) {
-          localStorage.setItem(
-            USER_KEY,
-            JSON.stringify(data.user)
-          );
-        }
-
-        /*
-          التأكد أن الحساب أدمن.
-        */
-
-        const user =
-          data.user || {};
-
-        if (
-          user.role &&
-          user.role !== "admin"
-        ) {
-
-          localStorage.removeItem(
-            TOKEN_KEY
-          );
-
-          localStorage.removeItem(
-            REFRESH_KEY
-          );
-
-          localStorage.removeItem(
-            USER_KEY
-          );
-
-          throw new Error(
-            "هذا الحساب ليس حساب مدير."
-          );
-        }
-
-        showDashboard();
-
-        await initializeDashboard();
-
-        showToast(
-          "تم تسجيل الدخول إلى لوحة الإدارة."
-        );
-
-      } catch (error) {
-
-        errorBox.textContent =
-          error.message ||
-          "تعذر تسجيل الدخول.";
-
-        errorBox.classList.remove(
-          "hidden"
-        );
-
-      } finally {
-
-        button.disabled = false;
-        button.textContent =
-          "تسجيل الدخول";
-
-      }
-
-    }
-
-
-    function showDashboard() {
-
-      $("loginPage")
-        .classList.add("hidden");
-
-      $("dashboardPage")
-        .classList.remove("hidden");
-
-      const user = getUser();
-
-      $("adminName").textContent =
-        user?.full_name ||
-        user?.username ||
-        "المدير";
-
-    }
-
-
-    function showLogin() {
-
-      $("dashboardPage")
-        .classList.add("hidden");
-
-      $("loginPage")
-        .classList.remove("hidden");
-
-    }
-
-
-    async function logout() {
-
-      try {
-
-        if (getToken()) {
-
-          await api("/logout", {
-            method: "POST"
-          });
-
-        }
-
-      } catch {
-        // Continue clearing local session.
-      }
-
-      localStorage.removeItem(
-        TOKEN_KEY
-      );
-
-      localStorage.removeItem(
-        REFRESH_KEY
-      );
-
-      localStorage.removeItem(
-        USER_KEY
-      );
-
-      showLogin();
-
-      showToast(
-        "تم تسجيل الخروج."
-      );
-
-    }
-
-
-    /* ======================================================
-       Navigation
-       ====================================================== */
-
-    function setupNavigation() {
-
-      document
-        .querySelectorAll(".nav-btn")
-        .forEach(button => {
-
-          button.addEventListener(
-            "click",
-            () => {
-
-              document
-                .querySelectorAll(".nav-btn")
-                .forEach(btn =>
-                  btn.classList.remove(
-                    "active"
-                  )
-                );
-
-              button.classList.add(
-                "active"
-              );
-
-              document
-                .querySelectorAll(".section")
-                .forEach(section =>
-                  section.classList.remove(
-                    "active"
-                  )
-                );
-
-              const section =
-                $("section-" +
-                  button.dataset.section);
-
-              if (section) {
-                section.classList.add(
-                  "active"
-                );
-              }
-
-              if (
-                button.dataset.section ===
-                "doctors"
-              ) {
-                loadDoctors();
-              }
-
-              if (
-                button.dataset.section ===
-                "overview"
-              ) {
-                loadStats();
-              }
-
-            }
-          );
-
-        });
-
-    }
-
-
-    /* ======================================================
-       System status
-       ====================================================== */
-
-    async function loadSystemStatus() {
-
-      const box =
-        $("systemStatus");
-
-      try {
-
-        const data =
-          await api("/health");
-
-        box.innerHTML = `
-          <div style="
-            display:flex;
-            align-items:center;
-            gap:10px;
-            color:#166534;
-            font-weight:800;
-          ">
-            <span style="font-size:20px;">●</span>
-            النظام يعمل بشكل طبيعي
-          </div>
-
-          <div style="
-            margin-top:9px;
-            color:#64748b;
-            font-size:12px;
-          ">
-            قاعدة البيانات:
-            ${escapeHtml(
-              data.database || "غير معروف"
-            )}
-          </div>
-
-          <div style="
-            margin-top:4px;
-            color:#64748b;
-            font-size:12px;
-          ">
-            PostgreSQL:
-            ${data.postgres ? "متصل" : "غير متصل"}
-          </div>
-
-          <div style="
-            margin-top:4px;
-            color:#64748b;
-            font-size:12px;
-          ">
-            CMS:
-            ${data.cms ? "مفعل" : "غير مفعل"}
-          </div>
-        `;
-
-      } catch (error) {
-
-        box.innerHTML = `
-          <div style="
-            color:#b91c1c;
-            font-weight:800;
-          ">
-            ● تعذر الاتصال بالخادم
-          </div>
-
-          <div style="
-            margin-top:5px;
-            font-size:12px;
-          ">
-            ${escapeHtml(error.message)}
-          </div>
-        `;
-
-      }
-
-    }
-
-
-    /* ======================================================
-       Stats
-       ====================================================== */
-
-    async function loadStats() {
-
-      try {
-
-        const data =
-          await api("/dashboard/stats");
-
-        const stats =
-          data?.stats || data || {};
-
-        $("statDoctors").textContent =
-          stats.doctors ??
-          stats.doctor_count ??
-          doctors.length ??
-          0;
-
-        $("statAppointments").textContent =
-          stats.appointments ??
-          stats.appointment_count ??
-          0;
-
-        $("statPatients").textContent =
-          stats.patients ??
-          stats.patient_count ??
-          0;
-
-        $("statServices").textContent =
-          stats.services ??
-          stats.service_count ??
-          0;
-
-      } catch (error) {
-
-        console.error(
-          "Stats error:",
-          error
-        );
-
-        /*
-          على الأقل نعرض عدد الأطباء
-          الذي تم تحميله.
-        */
-
-        $("statDoctors").textContent =
-          doctors.length;
-
-      }
-
-    }
-
-
-    /* ======================================================
-       Doctors
-       ====================================================== */
-
-    async function loadDoctors() {
-
-      const tbody =
-        $("doctorsTableBody");
-
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="6">
-            <div class="empty">
-              جارٍ تحميل الأطباء...
-            </div>
-          </td>
-        </tr>
-      `;
-
-      try {
-
-        const data =
-          await api("/dashboard/doctors");
-
-        doctors =
-          Array.isArray(data)
-            ? data
-            : Array.isArray(data?.doctors)
-              ? data.doctors
-              : [];
-
-        renderDoctors();
-
-        $("statDoctors").textContent =
-          doctors.length;
-
-      } catch (error) {
-
-        console.error(
-          "Doctors error:",
-          error
-        );
-
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="6">
-              <div class="empty">
-                <div class="empty-icon">⚠️</div>
-
-                <strong>
-                  تعذر تحميل الأطباء
-                </strong>
-
-                <div style="margin-top:5px;font-size:12px;">
-                  ${escapeHtml(error.message)}
-                </div>
-              </div>
-            </td>
-          </tr>
-        `;
-
-      }
-
-    }
-
-
-    function renderDoctors() {
-
-      const tbody =
-        $("doctorsTableBody");
-
-      if (!doctors.length) {
-
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="6">
-
-              <div class="empty">
-
-                <div class="empty-icon">
-                  👨‍⚕️
-                </div>
-
-                <strong>
-                  لا يوجد أطباء حاليًا
-                </strong>
-
-                <div style="
-                  margin-top:5px;
-                  font-size:12px;
-                ">
-                  اضغط «إضافة طبيب» لإضافة أول طبيب.
-                </div>
-
-              </div>
-
-            </td>
-          </tr>
-        `;
-
-        return;
-      }
-
-
-      tbody.innerHTML =
-        doctors.map(
-          doctor => {
-
-            const active =
-              doctor.active !== false;
-
-            const available =
-              doctor.available !== false;
-
-            const name =
-              doctor.full_name ||
-              "بدون اسم";
-
-            const initials =
-              name
-                .split(/\s+/)
-                .filter(Boolean)
-                .slice(0,2)
-                .map(
-                  word =>
-                    word.charAt(0)
-                )
-                .join("") || "ط";
-
-
-            const image =
-              doctor.image_url || "";
-
-
-            return `
-              <tr>
-
-                <td>
-
-                  <div class="doctor-cell">
-
-                    ${
-                      image
-                        ? `
-                          <img
-                            class="doctor-avatar"
-                            src="${escapeHtml(image)}"
-                            alt="${escapeHtml(name)}"
-                            onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
-                          >
-
-                          <div
-                            class="doctor-avatar-placeholder"
-                            style="display:none;"
-                          >
-                            ${escapeHtml(initials)}
-                          </div>
-                        `
-                        : `
-                          <div class="doctor-avatar-placeholder">
-                            ${escapeHtml(initials)}
-                          </div>
-                        `
-                    }
-
-                    <div>
-
-                      <div class="doctor-name">
-                        ${escapeHtml(name)}
-                      </div>
-
-                      <div class="doctor-username">
-                        @${escapeHtml(
-                          doctor.username || ""
-                        )}
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                </td>
-
-
-                <td>
-                  ${escapeHtml(
-                    doctor.specialty ||
-                    "—"
-                  )}
-                </td>
-
-
-                <td>
-                  ${escapeHtml(
-                    doctor.area ||
-                    "—"
-                  )}
-                </td>
-
-
-                <td>
-                  ${escapeHtml(
-                    doctor.phone ||
-                    "—"
-                  )}
-                </td>
-
-
-                <td>
-
-                  ${
-                    active
-                      ? `
-                        <span class="badge badge-green">
-                          نشط
-                        </span>
-                      `
-                      : `
-                        <span class="badge badge-red">
-                          معطل
-                        </span>
-                      `
-                  }
-
-                  ${
-                    active && available
-                      ? `
-                        <div style="
-                          margin-top:5px;
-                          color:#16a34a;
-                          font-size:10px;
-                          font-weight:800;
-                        ">
-                          ● متاح للحجز
-                        </div>
-                      `
-                      : active
-                        ? `
-                          <div style="
-                            margin-top:5px;
-                            color:#d97706;
-                            font-size:10px;
-                            font-weight:800;
-                          ">
-                            ● غير متاح
-                          </div>
-                        `
-                        : ""
-                  }
-
-                </td>
-
-
-                <td>
-
-                  <button
-                    class="action-btn edit-btn"
-                    onclick="editDoctor('${escapeHtml(doctor.id)}')"
-                  >
-                    تعديل
-                  </button>
-
-                  ${
-                    active
-                      ? `
-                        <button
-                          class="action-btn disable-btn"
-                          onclick="toggleDoctor('${escapeHtml(doctor.id)}', false)"
-                        >
-                          تعطيل
-                        </button>
-                      `
-                      : `
-                        <button
-                          class="action-btn enable-btn"
-                          onclick="toggleDoctor('${escapeHtml(doctor.id)}', true)"
-                        >
-                          تفعيل
-                        </button>
-                      `
-                  }
-
-                </td>
-
-              </tr>
-            `;
-
-          }
-        ).join("");
-
-    }
-
-
-    /* ======================================================
-       Doctor modal
-       ====================================================== */
-
-    function openDoctorModal(doctor = null) {
-
-      editingDoctor = doctor;
-
-      $("doctorForm").reset();
-
-      $("doctorId").value =
-        doctor?.id || "";
-
-      $("doctorFullName").value =
-        doctor?.full_name || "";
-
-      $("doctorUsername").value =
-        doctor?.username || "";
-
-      $("doctorPassword").value = "";
-
-      $("doctorPhone").value =
-        doctor?.phone || "";
-
-      $("doctorEmail").value =
-        doctor?.email || "";
-
-      $("doctorSpecialty").value =
-        doctor?.specialty || "";
-
-      $("doctorArea").value =
-        doctor?.area || "";
-
-      $("doctorImage").value =
-        doctor?.image_url || "";
-
-      $("doctorBio").value =
-        doctor?.bio || "";
-
-      $("doctorActive").checked =
-        doctor
-          ? doctor.active !== false
-          : true;
-
-      $("doctorAvailable").checked =
-        doctor
-          ? doctor.available !== false
-          : true;
-
-      if (doctor) {
-
-        $("doctorModalTitle").textContent =
-          "تعديل بيانات الطبيب";
-
-        $("passwordHint").textContent =
-          "(اتركه فارغًا إذا لم ترد تغييره)";
-
-        $("doctorUsername").readOnly = true;
-
-      } else {
-
-        $("doctorModalTitle").textContent =
-          "إضافة طبيب";
-
-        $("passwordHint").textContent =
-          "(مطلوبة عند الإضافة)";
-
-        $("doctorUsername").readOnly = false;
-
-      }
-
-      $("doctorModalOverlay")
-        .classList.remove("hidden");
-
-    }
-
-
-    function closeDoctorModal() {
-
-      $("doctorModalOverlay")
-        .classList.add("hidden");
-
-      editingDoctor = null;
-
-    }
-
-
-    function editDoctor(id) {
-
-      const doctor =
-        doctors.find(
-          item =>
-            String(item.id) ===
-            String(id)
-        );
-
-      if (!doctor) {
-
-        showToast(
-          "لم يتم العثور على الطبيب.",
-          "error"
-        );
-
-        return;
-      }
-
-      openDoctorModal(doctor);
-
-    }
-
-
-    /* ======================================================
-       Save doctor
-       ====================================================== */
-
-    async function saveDoctor(event) {
-
-      event.preventDefault();
-
-      const id =
-        $("doctorId").value;
-
-      const isEdit =
-        Boolean(id);
-
-      const full_name =
-        $("doctorFullName")
-          .value
-          .trim();
-
-      const username =
-        $("doctorUsername")
-          .value
-          .trim();
-
-      const password =
-        $("doctorPassword")
-          .value;
-
-      const phone =
-        $("doctorPhone")
-          .value
-          .trim();
-
-      const email =
-        $("doctorEmail")
-          .value
-          .trim();
-
-      const specialty =
-        $("doctorSpecialty")
-          .value
-          .trim();
-
-      const area =
-        $("doctorArea")
-          .value
-          .trim();
-
-      const image_url =
-        $("doctorImage")
-          .value
-          .trim();
-
-      const bio =
-        $("doctorBio")
-          .value
-          .trim();
-
-      const active =
-        $("doctorActive").checked;
-
-      const available =
-        $("doctorAvailable").checked;
-
-
-      if (!full_name) {
-
-        showToast(
-          "أدخل اسم الطبيب.",
-          "error"
-        );
-
-        return;
-      }
-
-
-      if (!username) {
-
-        showToast(
-          "أدخل اسم المستخدم.",
-          "error"
-        );
-
-        return;
-      }
-
-
-      if (
-        !isEdit &&
-        !password
-      ) {
-
-        showToast(
-          "كلمة المرور مطلوبة عند إضافة الطبيب.",
-          "error"
-        );
-
-        return;
-      }
-
-
-      if (
-        !isEdit &&
-        password.length < 6
-      ) {
-
-        showToast(
-          "كلمة المرور يجب أن تكون 6 أحرف على الأقل.",
-          "error"
-        );
-
-        return;
-      }
-
-
-      const button =
-        $("saveDoctorBtn");
-
-      button.disabled = true;
-
-      button.textContent =
-        "جارٍ الحفظ...";
-
-
-      try {
-
-        const payload = {
-          full_name,
-          username,
-          phone,
-          email: email || null,
-          specialty,
-          area,
-          image_url,
-          bio,
-          active,
-          available
-        };
-
-
-        if (password) {
-          payload.password =
-            password;
-        }
-
-
-        let data;
-
-
-        if (isEdit) {
-
-          data =
-            await api(
-              "/dashboard/doctors/" +
-              encodeURIComponent(id),
-              {
-                method: "PATCH",
-                body: JSON.stringify(
-                  payload
-                )
-              }
-            );
-
-        } else {
-
-          payload.password =
-            password;
-
-          data =
-            await api(
-              "/dashboard/doctors",
-              {
-                method: "POST",
-                body: JSON.stringify(
-                  payload
-                )
-              }
-            );
-
-        }
-
-
-        closeDoctorModal();
-
-        showToast(
-          data?.message ||
-          (
-            isEdit
-              ? "تم تحديث بيانات الطبيب."
-              : "تمت إضافة الطبيب بنجاح."
-          )
-        );
-
-
-        await loadDoctors();
-
-        await loadStats();
-
-
-      } catch (error) {
-
-        showToast(
-          error.message ||
-          "تعذر حفظ الطبيب.",
-          "error"
-        );
-
-      } finally {
-
-        button.disabled = false;
-
-        button.textContent =
-          "حفظ الطبيب";
-
-      }
-
-    }
-
-
-    /* ======================================================
-       Enable / Disable doctor
-       ====================================================== */
-
-    async function toggleDoctor(
-      id,
-      enable
-    ) {
-
-      const doctor =
-        doctors.find(
-          item =>
-            String(item.id) ===
-            String(id)
-        );
-
-      if (!doctor) {
-        return;
-      }
-
-
-      const message =
-        enable
-          ? `هل تريد تفعيل الطبيب "${doctor.full_name}"؟`
-          : `هل تريد تعطيل الطبيب "${doctor.full_name}"؟`;
-
-
-      if (!confirm(message)) {
-        return;
-      }
-
-
-      try {
-
-        const data =
-          await api(
-            "/dashboard/doctors/" +
-            encodeURIComponent(id),
-            {
-              method: "PATCH",
-              body: JSON.stringify({
-                active: enable,
-                available: enable
-                  ? doctor.available !== false
-                  : false
-              })
-            }
-          );
-
-
-        showToast(
-          data?.message ||
-          (
-            enable
-              ? "تم تفعيل الطبيب."
-              : "تم تعطيل الطبيب."
-          )
-        );
-
-
-        await loadDoctors();
-
-        await loadStats();
-
-
-      } catch (error) {
-
-        showToast(
-          error.message ||
-          "تعذر تغيير حالة الطبيب.",
-          "error"
-        );
-
-      }
-
-    }
-
-
-    /* ======================================================
-       Initialization
-       ====================================================== */
-
-    async function initializeDashboard() {
-
-      setupNavigation();
-
-      await Promise.all([
-        loadSystemStatus(),
-        loadDoctors(),
-        loadStats()
-      ]);
-
-    }
-
-
-    /* ======================================================
-       Event listeners
-       ====================================================== */
-
-    $("adminLoginForm")
-      .addEventListener(
-        "submit",
-        login
-      );
-
-
-    $("logoutBtn")
-      .addEventListener(
-        "click",
-        logout
-      );
-
-
-    $("addDoctorBtn")
-      .addEventListener(
-        "click",
-        () => openDoctorModal()
-      );
-
-
-    $("closeDoctorModal")
-      .addEventListener(
-        "click",
-        closeDoctorModal
-      );
-
-
-    $("cancelDoctorBtn")
-      .addEventListener(
-        "click",
-        closeDoctorModal
-      );
-
-
-    $("doctorForm")
-      .addEventListener(
-        "submit",
-        saveDoctor
-      );
-
-
-    $("doctorModalOverlay")
-      .addEventListener(
-        "click",
-        event => {
-
-          if (
-            event.target ===
-            $("doctorModalOverlay")
-          ) {
-            closeDoctorModal();
-          }
-
-        }
-      );
-
-
-    /* ======================================================
-       Initial page state
-       ====================================================== */
-
-    (async function start() {
-
-      if (!getToken()) {
-
-        showLogin();
-
-        return;
-
-      }
-
-
-      /*
-        لدينا جلسة محفوظة.
-        نحاول فتح لوحة الإدارة.
-      */
-
-      try {
-
-        const data =
-          await api("/staff/me");
-
-        const user =
-          data?.user ||
-          data?.staff ||
-          data;
-
-
-        if (
-          user?.role &&
-          user.role !== "admin"
-        ) {
-
-          throw new Error(
-            "الحساب الحالي ليس حساب مدير."
-          );
-
-        }
-
-
-        if (data?.user) {
-
-          localStorage.setItem(
-            USER_KEY,
-            JSON.stringify(
-              data.user
-            )
-          );
-
-        }
-
-
-        showDashboard();
-
-        await initializeDashboard();
-
-
-      } catch (error) {
-
-        console.warn(
-          "Existing session invalid:",
-          error
-        );
-
-        localStorage.removeItem(
-          TOKEN_KEY
-        );
-
-        localStorage.removeItem(
-          REFRESH_KEY
-        );
-
-        localStorage.removeItem(
-          USER_KEY
-        );
-
-        showLogin();
-
-      }
-
-    })();
-
-  </script>
-
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleImageSelect(event){
+  const file=event.target.files?.[0];
+  if(!file){clearImagePreview();return;}
+  if(!file.type.startsWith("image/")){event.target.value="";showToast("اختر ملف صورة صالحًا.","error");return;}
+  try{
+    const dataUrl=await resizeImage(file);
+    showImagePreview(dataUrl);
+  }catch(error){event.target.value="";showToast(error.message,"error")}
+}
+
+function openDoctorModal(doctor=null){
+  editingDoctor=doctor;
+  pendingImageData="";
+  $("doctorForm").reset();
+  $("doctorId").value=doctor?.id||"";
+  $("doctorFullName").value=doctor?.full_name||"";
+  $("doctorPhone").value=doctor?.phone||"";
+  $("doctorEmail").value=doctor?.email||"";
+  $("doctorSpecialty").value=doctor?.specialty||"";
+  $("doctorArea").value=doctor?.area||"";
+  $("doctorBio").value=doctor?.bio||"";
+  $("doctorActive").checked=doctor?doctor.active!==false:true;
+  $("doctorImageFile").value="";
+  clearImagePreview();
+  if(doctor?.image_url) showImagePreview(doctor.image_url);
+  $("doctorModalTitle").textContent=doctor?"تعديل بيانات الطبيب":"إضافة طبيب";
+  $("doctorModalOverlay").classList.remove("hidden");
+}
+
+function closeDoctorModal(){$("doctorModalOverlay").classList.add("hidden");editingDoctor=null;clearImagePreview()}
+function editDoctor(id){const doctor=doctors.find(item=>String(item.id)===String(id));if(!doctor){showToast("لم يتم العثور على الطبيب.","error");return}openDoctorModal(doctor)}
+
+async function saveDoctor(event){
+  event.preventDefault();
+  const id=$("doctorId").value;const isEdit=Boolean(id);
+  const full_name=$("doctorFullName").value.trim();
+  const phone=$("doctorPhone").value.trim();
+  const email=$("doctorEmail").value.trim();
+  const specialty=$("doctorSpecialty").value.trim();
+  const area=$("doctorArea").value.trim();
+  const bio=$("doctorBio").value.trim();
+  const active=$("doctorActive").checked;
+  if(!full_name){showToast("أدخل اسم الطبيب.","error");return}
+  if(!specialty){showToast("أدخل تخصص الطبيب.","error");return}
+  const button=$("saveDoctorBtn");button.disabled=true;button.textContent="جارٍ الحفظ...";
+  try{
+    const payload={full_name,specialty,area:area||null,phone:phone||null,email:email||null,bio:bio||null,image_url:pendingImageData||editingDoctor?.image_url||null,active};
+    const data=isEdit?await api("/admin/doctors/"+encodeURIComponent(id),{method:"PUT",body:JSON.stringify(payload)}):await api("/admin/doctors",{method:"POST",body:JSON.stringify(payload)});
+    closeDoctorModal();
+    showToast(data?.message||(isEdit?"تم تحديث بيانات الطبيب.":"تمت إضافة الطبيب بنجاح."));
+    await loadDoctors();await loadStats();
+  }catch(error){showToast(error.message||"تعذر حفظ الطبيب.","error");console.error("Save doctor error:",error)}finally{button.disabled=false;button.textContent="حفظ الطبيب"}
+}
+
+async function toggleDoctor(id,enable){
+  const doctor=doctors.find(item=>String(item.id)===String(id));if(!doctor)return;
+  const message=enable?`هل تريد تفعيل الطبيب "${doctor.full_name}"؟`:`هل تريد تعطيل الطبيب "${doctor.full_name}"؟`;
+  if(!confirm(message))return;
+  try{
+    const data=await api("/admin/doctors/"+encodeURIComponent(id)+"/status",{method:"PATCH",body:JSON.stringify({active:enable})});
+    showToast(data?.message||(enable?"تم تفعيل الطبيب.":"تم تعطيل الطبيب."));
+    await loadDoctors();await loadStats();
+  }catch(error){showToast(error.message||"تعذر تغيير حالة الطبيب.","error")}
+}
+
+async function initializeDashboard(){setupNavigation();await Promise.all([loadSystemStatus(),loadDoctors(),loadStats()])}
+
+$("adminLoginForm").addEventListener("submit",login);
+$("logoutBtn").addEventListener("click",logout);
+$("addDoctorBtn").addEventListener("click",()=>openDoctorModal());
+$("closeDoctorModal").addEventListener("click",closeDoctorModal);
+$("cancelDoctorBtn").addEventListener("click",closeDoctorModal);
+$("doctorForm").addEventListener("submit",saveDoctor);
+$("doctorImageFile").addEventListener("change",handleImageSelect);
+$("doctorModalOverlay").addEventListener("click",event=>{if(event.target===$("doctorModalOverlay"))closeDoctorModal()});
+
+(async function start(){
+  if(!getToken()){showLogin();return}
+  try{
+    const data=await api("/staff/me");
+    const user=data?.user||data?.staff||data;
+    if(user?.role && user.role!=="admin") throw new Error("الحساب الحالي ليس حساب مدير.");
+    if(data?.user) localStorage.setItem(USER_KEY,JSON.stringify(data.user));
+    showDashboard();await initializeDashboard();
+  }catch(error){
+    console.warn("Existing session invalid:",error);
+    localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(REFRESH_KEY);localStorage.removeItem(USER_KEY);showLogin();
+  }
+})();
+</script>
 </body>
 </html>
