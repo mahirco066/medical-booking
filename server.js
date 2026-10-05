@@ -288,6 +288,9 @@ async function initDatabase() {
 
   const compatibilityColumns = [
     ["users", "password_hash", "TEXT"],
+    ["users", "username", "TEXT"],
+    ["users", "password_hash", "TEXT"],
+    ["users", "full_name", "TEXT"],
     ["users", "role", "TEXT NOT NULL DEFAULT 'patient'"],
     ["users", "active", "BOOLEAN NOT NULL DEFAULT TRUE"],
     ["users", "phone", "TEXT"],
