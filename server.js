@@ -499,8 +499,17 @@ async function seedAdmin() {
   const username = normalizeUsername(
     process.env.ADMIN_USERNAME || "admin"
   );
-  const password = process.env.ADMIN_PASSWORD || "admin123";const fullName = process.env.ADMIN_NAME || "مدير منصة موعدي";
-  const passwordHash = await hashPassword(password);
+
+  const password =
+    process.env.ADMIN_PASSWORD || "admin123";
+
+  const fullName =
+    process.env.ADMIN_NAME || "مدير منصة موعدي";
+
+  const passwordData = await hashPassword(password);
+
+  const passwordHash =
+    `${passwordData.salt}:${passwordData.hash}`;
 
   const existing = await pool.query(
     "SELECT id FROM staff_users WHERE username=$1 LIMIT 1",
@@ -510,18 +519,26 @@ async function seedAdmin() {
   if (existing.rowCount) {
     await pool.query(
       "UPDATE staff_users SET password_hash=$1,full_name=$2,role='admin',active=TRUE,updated_at=NOW() WHERE username=$3",
-      [passwordHash, fullName, username]
+      [
+        passwordHash,
+        fullName,
+        username
+      ]
     );
   } else {
     await pool.query(
       "INSERT INTO staff_users (id,username,password_hash,full_name,role,active) VALUES ($1,$2,$3,$4,'admin',TRUE)",
-      [makeId(), username, passwordHash, fullName]
+      [
+        makeId(),
+        username,
+        passwordHash,
+        fullName
+      ]
     );
   }
 
   console.log("Admin account ready.");
 }
-
 async function createSession(staffUserId, userId, days) {
   const accessToken = randomToken();
   const refreshToken = randomToken();
