@@ -450,9 +450,28 @@ function renderAppointments(appointments){
       "success"
     );
 
-    // إعادة تحميل المواعيد من قاعدة البيانات
-    // ثم تحديث الجدول مباشرة
-    await loadAppointments();
+    const button = document.querySelector(
+      `button[onclick*="${appointmentId}"]`
+    );
+
+    if (button) {
+      const row = button.closest("tr");
+
+      if (row) {
+        const cells = row.querySelectorAll("td");
+
+        // عمود الحالة
+        if (cells[6]) {
+          cells[6].innerHTML =
+            '<span class="badge badge-green">مؤكد</span>';
+        }
+
+        // عمود الإجراءات
+        if (cells[7]) {
+          cells[7].textContent = "—";
+        }
+      }
+    }
 
   } catch (error) {
     console.error("Confirm appointment error:", error);
