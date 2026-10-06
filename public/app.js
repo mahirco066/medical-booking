@@ -609,7 +609,7 @@
     }
 
     try {
-      const data = await api("/patient/login", {
+      const data = await api("/login", {
         method: "POST",
         body: JSON.stringify({
           username,
