@@ -65,9 +65,14 @@ function jsonError(res, status, message) {
 function hashPassword(password) {
   return new Promise((resolve, reject) => {
     const salt = crypto.randomBytes(16).toString("hex");
+
     crypto.scrypt(String(password), salt, 64, (error, derivedKey) => {
       if (error) return reject(error);
-      resolve(salt + ":" + derivedKey.toString("hex"));
+
+      resolve({
+        salt,
+        hash: derivedKey.toString("hex")
+      });
     });
   });
 }
