@@ -449,6 +449,7 @@ function renderAppointments(appointments){
       data.message || "تم تأكيد الموعد بنجاح.",
       "success"
     );
+    alert("وصلنا إلى ما بعد نجاح التأكيد");
 
     // إعادة تحميل قائمة المواعيد من الخادم
    const latestData = await api("/appointments");
