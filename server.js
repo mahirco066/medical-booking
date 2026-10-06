@@ -691,9 +691,17 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
     const passwordHash = await hashPassword(password);
 
     await pool.query(
-      "INSERT INTO users (id,username,password_hash,full_name,phone,email,role,active) VALUES ($1,$2,$3,$4,$5,$6,'patient',TRUE)",
-      [userId, username, passwordHash, fullName, phone, email]
-    );
+  "INSERT INTO users (id,username,password_hash,password_salt,full_name,phone,email,role,active) VALUES ($1,$2,$3,$4,$5,$6,$7,'patient',TRUE)",
+  [
+    userId,
+    username,
+    passwordHash,
+    passwordHash.split(":")[0],
+    fullName,
+    phone,
+    email
+  ]
+);
 
     await pool.query(
       "INSERT INTO patients (id,user_id,full_name,phone,email,active) VALUES ($1,$2,$3,$4,$5,TRUE)",
