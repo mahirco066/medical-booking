@@ -766,6 +766,132 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
     );
   }
 });
+app.post("/api/login", async (req, res) => {
+  try {
+    const username = normalizeUsername(req.body.username);
+    const password = String(req.body.password || "");
+
+    if (!username || !password) {
+      return jsonError(res, 400, "اسم المستخدم وكلمة المرور مطلوبان.");
+    }
+
+    const result = await pool.query(
+      `SELECT
+        id,
+        username,
+        password_hash,
+        password_salt,
+        full_name,
+        phone,
+        email,
+        role,
+        active
+       FROM users
+       WHERE username=$1
+       LIMIT 1`,
+      [username]
+    );
+
+    if (!result.rowCount) {
+      return jsonError(
+        res,
+        401,
+        "اسم المستخدم أو كلمة المرور غير صحيحة."
+      );
+    }
+
+    const user = result.rows[0];
+
+    if (!user.active) {
+      return jsonError(res, 403, "هذا الحساب غير مفعل.");
+    }
+
+    // التحقق من كلمة مرور المريض باستخدام الـ salt
+    // المخزن في password_salt
+    const passwordValid = await new Promise((resolve, reject) => {
+      crypto.scrypt(
+        password,
+        user.password_salt,
+        64,
+        (error, derivedKey) => {
+          if (error) return reject(error);
+
+          try {
+            const storedHash = Buffer.from(
+              user.password_hash,
+              "hex"
+            );
+
+            if (storedHash.length !== derivedKey.length) {
+              return resolve(false);
+            }
+
+            resolve(
+              crypto.timingSafeEqual(
+                storedHash,
+                derivedKey
+              )
+            );
+          } catch (compareError) {
+            reject(compareError);
+          }
+        }
+      );
+    });
+
+    if (!passwordValid) {
+      return jsonError(
+        res,
+        401,
+        "اسم المستخدم أو كلمة المرور غير صحيحة."
+      );
+    }
+
+    const patient = await pool.query(
+      `SELECT
+        id,
+        user_id,
+        username,
+        full_name,
+        phone,
+        email,
+        date_of_birth,
+        gender,
+        address,
+        active
+       FROM patients
+       WHERE user_id=$1
+       LIMIT 1`,
+      [user.id]
+    );
+
+    const tokens = await createSession(null, user.id, 30);
+
+    return jsonOk(res, {
+      message: "تم تسجيل الدخول بنجاح.",
+      token: tokens.accessToken,
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+
+      user: {
+        id: user.id,
+        username: user.username,
+        full_name: user.full_name,
+        phone: user.phone,
+        email: user.email,
+        role: user.role
+      },
+
+      patient: patient.rowCount
+        ? patient.rows[0]
+        : null
+    });
+
+  } catch (error) {
+    console.error("Patient login error:", error);
+    return jsonError(res, 500, "تعذر تسجيل الدخول.");
+  }
+});
 app.post("/api/staff/login", async (req, res) => {
   try {
     const username = normalizeUsername(req.body.username);
