@@ -1333,6 +1333,45 @@ app.get("/api/appointments", requireAuth, async (req, res) => {
     return jsonError(res, 500, "تعذر تحميل المواعيد.");
   }
 });
+app.patch("/api/appointments/:id/confirm", requireAuth, async (req, res) => {
+  try {
+    if (req.authUser.type !== "staff") {
+      return jsonError(res, 403, "هذا المسار مخصص للإدارة.");
+    }
+
+    const appointmentId = clean(req.params.id);
+
+    if (!appointmentId) {
+      return jsonError(res, 400, "معرف الموعد غير صحيح.");
+    }
+
+    const result = await pool.query(
+      `UPDATE appointments
+       SET status='confirmed',
+           updated_at=NOW()
+       WHERE id=$1
+         AND status='pending'
+       RETURNING *`,
+      [appointmentId]
+    );
+
+    if (!result.rowCount) {
+      return jsonError(
+        res,
+        404,
+        "الموعد غير موجود أو تم تغيير حالته مسبقًا."
+      );
+    }
+
+    return jsonOk(res, {
+      message: "تم تأكيد الموعد بنجاح.",
+      appointment: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Confirm appointment error:", error);
+    return jsonError(res, 500, "تعذر تأكيد الموعد.");
+  }
+});
 app.get("/api/my-appointments", requireAuth, async (req, res) => {
   try {
     if (req.authUser.type !== "patient") {
