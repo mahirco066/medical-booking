@@ -892,6 +892,42 @@ app.post("/api/login", async (req, res) => {
     return jsonError(res, 500, "تعذر تسجيل الدخول.");
   }
 });
+app.get("/api/patient/me", requireAuth, async (req, res) => {
+  try {
+    if (!req.user?.id) {
+      return jsonError(res, 401, "جلسة الدخول غير صالحة.");
+    }
+
+    const result = await pool.query(
+      `SELECT
+        p.id,
+        p.user_id,
+        p.username,
+        p.full_name,
+        p.phone,
+        p.email,
+        p.date_of_birth,
+        p.gender,
+        p.address,
+        p.active
+       FROM patients p
+       WHERE p.user_id=$1
+       LIMIT 1`,
+      [req.user.id]
+    );
+
+    if (!result.rowCount) {
+      return jsonError(res, 404, "بيانات المريض غير موجودة.");
+    }
+
+    return jsonOk(res, {
+      patient: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Patient profile error:", error);
+    return jsonError(res, 500, "تعذر تحميل بيانات الحساب.");
+  }
+});
 app.post("/api/staff/login", async (req, res) => {
   try {
     const username = normalizeUsername(req.body.username);
