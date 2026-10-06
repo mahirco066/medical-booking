@@ -91,7 +91,50 @@
         </div>
       </section>
 
-      <section id="section-appointments" class="section"><div class="page-title"><h2>المواعيد</h2><p>إدارة ومتابعة حجوزات المرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">📅</div><strong>إدارة المواعيد</strong><div style="margin-top:5px;font-size:12px;">سنقوم بتفعيل هذه الصفحة في المرحلة التالية.</div></div></div></section>
+      <section id="section-appointments" class="section">
+  <div class="page-title">
+    <h2>المواعيد</h2>
+    <p>إدارة ومتابعة حجوزات المرضى</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h3>قائمة المواعيد</h3>
+        <p>جميع الحجوزات المسجلة في المنصة</p>
+      </div>
+
+      <button id="refreshAppointmentsBtn" class="add-btn" type="button">
+        ↻ تحديث المواعيد
+      </button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>المريض</th>
+            <th>الهاتف</th>
+            <th>الطبيب</th>
+            <th>الخدمة</th>
+            <th>التاريخ</th>
+            <th>الوقت</th>
+            <th>الحالة</th>
+            <th>الإجراءات</th>
+          </tr>
+        </thead>
+
+        <tbody id="appointmentsTableBody">
+          <tr>
+            <td colspan="8" style="text-align:center;padding:30px;">
+              جارٍ تحميل المواعيد...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
       <section id="section-patients" class="section"><div class="page-title"><h2>المرضى</h2><p>إدارة حسابات المرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">👥</div><strong>إدارة المرضى</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
       <section id="section-services" class="section"><div class="page-title"><h2>الخدمات الطبية</h2><p>الخدمات التي يمكن للمريض حجزها</p></div><div class="panel"><div class="empty"><div class="empty-icon">🩺</div><strong>إدارة الخدمات</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
       <section id="section-records" class="section"><div class="page-title"><h2>السجلات الطبية</h2><p>متابعة السجلات الطبية للمرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">📋</div><strong>السجلات الطبية</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
@@ -209,7 +252,8 @@ function setupNavigation(){
     document.querySelectorAll(".section").forEach(section=>section.classList.remove("active"));
     const section=$("section-"+button.dataset.section);if(section) section.classList.add("active");
     if(button.dataset.section==="doctors") loadDoctors();
-    if(button.dataset.section==="overview") loadStats();
+if(button.dataset.section==="appointments") loadAppointments();
+if(button.dataset.section==="overview") loadStats();
   }));
 }
 
@@ -244,7 +288,144 @@ async function loadDoctors(){
     tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">⚠️</div><strong>تعذر تحميل الأطباء</strong><div style="margin-top:5px;font-size:12px">${escapeHtml(error.message)}</div></div></td></tr>`;
   }
 }
+async function loadAppointments(){
+  const tbody = $("appointmentsTableBody");
 
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="8">
+        <div class="empty">جارٍ تحميل المواعيد...</div>
+      </td>
+    </tr>
+  `;
+
+  try {
+    const data = await api("/appointments");
+
+    const appointments = Array.isArray(data?.appointments)
+      ? data.appointments
+      : [];
+
+    renderAppointments(appointments);
+
+    if ($("statAppointments")) {
+      $("statAppointments").textContent = appointments.length;
+    }
+  } catch (error) {
+    console.error("Appointments error:", error);
+
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8">
+          <div class="empty">
+            <div class="empty-icon">⚠️</div>
+            <strong>تعذر تحميل المواعيد</strong>
+            <div style="margin-top:5px;font-size:12px">
+              ${escapeHtml(error.message)}
+            </div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+}
+
+function renderAppointments(appointments){
+  const tbody = $("appointmentsTableBody");
+
+  if (!appointments.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8">
+          <div class="empty">
+            <div class="empty-icon">📅</div>
+            <strong>لا توجد مواعيد حاليًا</strong>
+            <div style="margin-top:5px;font-size:12px">
+              لم يتم تسجيل أي حجوزات بعد.
+            </div>
+          </div>
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+  tbody.innerHTML = appointments.map(appointment => {
+    const status = String(appointment.status || "pending");
+
+    let statusHtml = "";
+
+    if (status === "pending") {
+      statusHtml = `<span class="badge" style="background:#fef3c7;color:#92400e">في انتظار التأكيد</span>`;
+    } else if (status === "confirmed") {
+      statusHtml = `<span class="badge badge-green">مؤكد</span>`;
+    } else if (status === "cancelled") {
+      statusHtml = `<span class="badge badge-red">ملغي</span>`;
+    } else {
+      statusHtml = `<span class="badge">${escapeHtml(status)}</span>`;
+    }
+
+    return `
+      <tr>
+        <td>
+          <strong>${escapeHtml(appointment.patient_name || "—")}</strong>
+        </td>
+
+        <td>
+          ${escapeHtml(appointment.patient_phone || "—")}
+        </td>
+
+        <td>
+          ${escapeHtml(appointment.doctor_name || "—")}
+          ${appointment.specialty
+            ? `<div style="font-size:11px;color:#64748b;margin-top:3px">${escapeHtml(appointment.specialty)}</div>`
+            : ""}
+        </td>
+
+        <td>
+          ${escapeHtml(appointment.service_name || "—")}
+        </td>
+
+        <td>
+          ${escapeHtml(appointment.appointment_date || "—")}
+        </td>
+
+        <td>
+          ${escapeHtml(String(appointment.appointment_time || "").slice(0,5) || "—")}
+        </td>
+
+        <td>
+          ${statusHtml}
+        </td>
+
+        <td>
+          ${
+            status === "pending"
+              ? `
+                <button
+                  class="action-btn enable-btn"
+                  type="button"
+                  onclick="confirmAppointment('${escapeHtml(appointment.id)}')">
+                  تأكيد
+                </button>
+
+                <button
+                  class="action-btn disable-btn"
+                  type="button"
+                  onclick="cancelAppointment('${escapeHtml(appointment.id)}')">
+                  إلغاء
+                </button>
+              `
+              : "—"
+          }
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
 function renderDoctors(){
   const tbody=$("doctorsTableBody");
   if(!doctors.length){tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">👨‍⚕️</div><strong>لا يوجد أطباء حاليًا</strong><div style="margin-top:5px;font-size:12px">اضغط «إضافة طبيب» لإضافة أول طبيب.</div></div></td></tr>`;return;}
