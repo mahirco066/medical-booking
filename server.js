@@ -724,9 +724,9 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
 
     await pool.query(
       `INSERT INTO patients
-      (id, user_id, full_name, phone, email, active)
-      VALUES ($1,$2,$3,$4,$5,TRUE)`,
-      [patientId, userId, fullName, phone, email]
+      (id, user_id, username, full_name, phone, email, active)
+      VALUES ($1,$2,$3,$4,$5,$6,TRUE)`,
+      [patientId, userId, username, fullName, phone, email]
     );
 
     const tokens = await createSession(null, userId, 30);
