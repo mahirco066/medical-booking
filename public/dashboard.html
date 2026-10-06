@@ -451,7 +451,15 @@ function renderAppointments(appointments){
     );
 
     // إعادة تحميل قائمة المواعيد من الخادم
-    await loadAppointments();
+   const latestData = await api("/appointments");
+
+const latestAppointment = latestData.appointments.find(
+  appointment => String(appointment.id) === String(appointmentId)
+);
+
+alert("الحالة التي أعادها الخادم الآن: " + String(latestAppointment?.status || "غير موجودة"));
+
+renderAppointments(latestData.appointments);
 
   } catch (error) {
     console.error("Confirm appointment error:", error);
