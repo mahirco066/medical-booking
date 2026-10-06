@@ -443,8 +443,8 @@ function renderAppointments(appointments){
       method: "PATCH"
     });
 
-    console.log("Confirm appointment response:", data);
-
+console.log("CONFIRM SUCCESS:", data);
+alert("تم تنفيذ التأكيد في الخادم");
     notify(
       data.message || "تم تأكيد الموعد بنجاح.",
       "success"
