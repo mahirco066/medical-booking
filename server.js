@@ -719,12 +719,18 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Registration error:", error);
-    if (error.code === "23505") {
-      return jsonError(res, 409, "اسم المستخدم مستخدم بالفعل.");
-    }
-    return jsonError(res, 500, "تعذر إنشاء الحساب.");
+  console.error("Registration error:", error);
+
+  if (error.code === "23505") {
+    return jsonError(res, 409, "اسم المستخدم مستخدم بالفعل.");
   }
+
+  return jsonError(
+    res,
+    500,
+    error?.message || "تعذر إنشاء الحساب."
+  );
+}
 });
 
 app.post("/api/login", async (req, res) => {
