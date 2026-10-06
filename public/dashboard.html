@@ -426,6 +426,41 @@ function renderAppointments(appointments){
     `;
   }).join("");
 }
+  async function confirmAppointment(appointmentId){
+  if (!appointmentId) {
+    notify("معرف الموعد غير موجود.", "error");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "هل أنت متأكد من تأكيد هذا الموعد؟"
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const data = await api(`/appointments/${appointmentId}/confirm`, {
+      method: "PATCH"
+    });
+
+    console.log("Confirm appointment response:", data);
+
+    notify(
+      data.message || "تم تأكيد الموعد بنجاح.",
+      "success"
+    );
+
+    await loadAppointments();
+
+  } catch (error) {
+    console.error("Confirm appointment error:", error);
+
+    notify(
+      error.message || "تعذر تأكيد الموعد.",
+      "error"
+    );
+  }
+}
 function renderDoctors(){
   const tbody=$("doctorsTableBody");
   if(!doctors.length){tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">👨‍⚕️</div><strong>لا يوجد أطباء حاليًا</strong><div style="margin-top:5px;font-size:12px">اضغط «إضافة طبيب» لإضافة أول طبيب.</div></div></td></tr>`;return;}
