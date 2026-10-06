@@ -1294,7 +1294,45 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
     return jsonError(res, 500, "تعذر إنشاء الموعد.");
   }
 });
+app.get("/api/appointments", requireAuth, async (req, res) => {
+  try {
+    if (req.authUser.type !== "staff") {
+      return jsonError(res, 403, "هذا المسار مخصص للإدارة.");
+    }
 
+    const result = await pool.query(
+      `SELECT
+        a.id,
+        a.patient_id,
+        a.doctor_id,
+        a.service_id,
+        a.patient_name,
+        a.patient_phone,
+        a.appointment_date,
+        a.appointment_time,
+        a.status,
+        a.notes,
+        a.cancellation_reason,
+        a.created_at,
+        a.updated_at,
+        d.full_name AS doctor_name,
+        d.specialty,
+        s.name AS service_name,
+        s.price
+       FROM appointments a
+       LEFT JOIN doctors d ON d.id=a.doctor_id
+       LEFT JOIN services s ON s.id=a.service_id
+       ORDER BY a.appointment_date DESC, a.appointment_time DESC`
+    );
+
+    return jsonOk(res, {
+      appointments: result.rows
+    });
+  } catch (error) {
+    console.error("Admin appointments error:", error);
+    return jsonError(res, 500, "تعذر تحميل المواعيد.");
+  }
+});
 app.get("/api/my-appointments", requireAuth, async (req, res) => {
   try {
     if (req.authUser.type !== "patient") {
