@@ -443,35 +443,15 @@ function renderAppointments(appointments){
       method: "PATCH"
     });
 
-console.log("CONFIRM SUCCESS:", data);
-alert("تم تنفيذ التأكيد في الخادم");
+    console.log("CONFIRM SUCCESS:", data);
+
     notify(
       data.message || "تم تأكيد الموعد بنجاح.",
       "success"
     );
 
-    const button = document.querySelector(
-      `button[onclick*="${appointmentId}"]`
-    );
-
-    if (button) {
-      const row = button.closest("tr");
-
-      if (row) {
-        const cells = row.querySelectorAll("td");
-
-        // عمود الحالة
-        if (cells[6]) {
-          cells[6].innerHTML =
-            '<span class="badge badge-green">مؤكد</span>';
-        }
-
-        // عمود الإجراءات
-        if (cells[7]) {
-          cells[7].textContent = "—";
-        }
-      }
-    }
+    // إعادة تحميل قائمة المواعيد من الخادم
+    await loadAppointments();
 
   } catch (error) {
     console.error("Confirm appointment error:", error);
