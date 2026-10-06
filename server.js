@@ -675,7 +675,9 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
     if (!username) return jsonError(res, 400, "اسم المستخدم مطلوب.");
     if (!fullName) return jsonError(res, 400, "الاسم الكامل مطلوب.");
     if (!phone) return jsonError(res, 400, "رقم الهاتف مطلوب.");
-    if (password.length < 6) return jsonError(res, 400, "كلمة المرور يجب ألا تقل عن 6 أحرف.");
+    if (password.length < 6) {
+      return jsonError(res, 400, "كلمة المرور يجب ألا تقل عن 6 أحرف.");
+    }
 
     const existing = await pool.query(
       "SELECT id FROM users WHERE username=$1 LIMIT 1",
@@ -688,23 +690,42 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
 
     const userId = makeId();
     const patientId = makeId();
-    const passwordHash = await hashPassword(password);
+
+    // إنشاء salt مستقل للحساب
+    const passwordSalt = crypto.randomBytes(16).toString("hex");
+
+    // إنشاء password hash باستخدام نفس الـ salt
+    const passwordHash = await new Promise((resolve, reject) => {
+      crypto.scrypt(
+        String(password),
+        passwordSalt,
+        64,
+        (error, derivedKey) => {
+          if (error) return reject(error);
+          resolve(derivedKey.toString("hex"));
+        }
+      );
+    });
 
     await pool.query(
-  "INSERT INTO users (id,username,password_hash,password_salt,full_name,phone,email,role,active) VALUES ($1,$2,$3,$4,$5,$6,$7,'patient',TRUE)",
-  [
-    userId,
-    username,
-    passwordHash,
-    passwordHash.split(":")[0],
-    fullName,
-    phone,
-    email
-  ]
-);
+      `INSERT INTO users
+      (id, username, password_hash, password_salt, full_name, phone, email, role, active)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,'patient',TRUE)`,
+      [
+        userId,
+        username,
+        passwordHash,
+        passwordSalt,
+        fullName,
+        phone,
+        email
+      ]
+    );
 
     await pool.query(
-      "INSERT INTO patients (id,user_id,full_name,phone,email,active) VALUES ($1,$2,$3,$4,$5,TRUE)",
+      `INSERT INTO patients
+      (id, user_id, full_name, phone, email, active)
+      VALUES ($1,$2,$3,$4,$5,TRUE)`,
       [patientId, userId, fullName, phone, email]
     );
 
@@ -732,78 +753,19 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
       }
     });
   } catch (error) {
-  console.error("Registration error:", error);
+    console.error("Registration error:", error);
 
-  if (error.code === "23505") {
-    return jsonError(res, 409, "اسم المستخدم مستخدم بالفعل.");
-  }
-
-  return jsonError(
-    res,
-    500,
-    error?.message || "تعذر إنشاء الحساب."
-  );
-}
-});
-
-app.post("/api/login", async (req, res) => {
-  try {
-    const username = normalizeUsername(req.body.username);
-    const password = String(req.body.password || "");
-
-    if (!username || !password) {
-      return jsonError(res, 400, "اسم المستخدم وكلمة المرور مطلوبان.");
+    if (error.code === "23505") {
+      return jsonError(res, 409, "اسم المستخدم مستخدم بالفعل.");
     }
 
-    const result = await pool.query(
-      "SELECT id,username,password_hash,full_name,phone,email,role,active FROM users WHERE username=$1 LIMIT 1",
-      [username]
+    return jsonError(
+      res,
+      500,
+      error?.message || "تعذر إنشاء الحساب."
     );
-
-    if (!result.rowCount) {
-      return jsonError(res, 401, "اسم المستخدم أو كلمة المرور غير صحيحة.");
-    }
-
-    const user = result.rows[0];
-
-    if (!user.active) {
-      return jsonError(res, 403, "هذا الحساب غير مفعل.");
-    }
-
-    const passwordValid = await verifyPassword(password, user.password_hash);
-
-    if (!passwordValid) {
-      return jsonError(res, 401, "اسم المستخدم أو كلمة المرور غير صحيحة.");
-    }
-
-    const patient = await pool.query(
-      "SELECT id,full_name,phone,email,date_of_birth,gender,address,active FROM patients WHERE user_id=$1 LIMIT 1",
-      [user.id]
-    );
-
-    const tokens = await createSession(null, user.id, 30);
-
-    return jsonOk(res, {
-      message: "تم تسجيل الدخول بنجاح.",
-      token: tokens.accessToken,
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
-      user: {
-        id: user.id,
-        username: user.username,
-        full_name: user.full_name,
-        phone: user.phone,
-        email: user.email,
-        role: user.role
-      },
-      patient: patient.rowCount ? patient.rows[0] : null
-    });
-  } catch (error) {
-    console.error("Patient login error:", error);
-    return jsonError(res, 500, "تعذر تسجيل الدخول.");
   }
 });
-
 app.post("/api/staff/login", async (req, res) => {
   try {
     const username = normalizeUsername(req.body.username);
