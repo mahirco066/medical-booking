@@ -659,7 +659,7 @@ app.get("/api/health", async (req, res) => {
    PATIENT AUTH
 ========================================================= */
 
-app.post("/api/register", async (req, res) => {
+app.post(["/api/register", "/api/patient/register"], async (req, res) => {
   try {
     const username = normalizeUsername(req.body.username);
     const fullName = clean(req.body.full_name);
