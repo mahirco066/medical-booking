@@ -432,7 +432,7 @@ function renderAppointments(appointments){
 }
 async function confirmAppointment(appointmentId){
   if (!appointmentId) {
-    notify("معرف الموعد غير موجود.", "error");
+    showToast("معرف الموعد غير موجود.", "error");
     return;
   }
 
@@ -443,9 +443,12 @@ async function confirmAppointment(appointmentId){
   if (!confirmed) return;
 
   try {
-    const data = await api(`/appointments/${encodeURIComponent(appointmentId)}/confirm`, {
-      method: "PATCH"
-    });
+    const data = await api(
+      `/appointments/${encodeURIComponent(appointmentId)}/confirm`,
+      {
+        method: "PATCH"
+      }
+    );
 
     console.log("Confirm appointment response:", data);
 
@@ -466,7 +469,7 @@ async function confirmAppointment(appointmentId){
       }
     }
 
-    notify(
+    showToast(
       data.message || "تم تأكيد الموعد بنجاح.",
       "success"
     );
@@ -474,7 +477,7 @@ async function confirmAppointment(appointmentId){
   } catch (error) {
     console.error("Confirm appointment error:", error);
 
-    notify(
+    showToast(
       error.message || "تعذر تأكيد الموعد.",
       "error"
     );
