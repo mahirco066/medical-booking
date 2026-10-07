@@ -427,6 +427,7 @@ function renderAppointments(appointments){
   }).join("");
 }
   async function confirmAppointment(appointmentId){
+    alert("تم تحميل دالة التأكيد الجديدة");
   if (!appointmentId) {
     notify("معرف الموعد غير موجود.", "error");
     return;
