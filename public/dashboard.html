@@ -430,7 +430,7 @@ function renderAppointments(appointments){
     `;
   }).join("");
 }
- async function confirmAppointment(appointmentId){
+async function confirmAppointment(appointmentId){
   if (!appointmentId) {
     notify("معرف الموعد غير موجود.", "error");
     return;
@@ -443,49 +443,33 @@ function renderAppointments(appointments){
   if (!confirmed) return;
 
   try {
-    const data = await api(`/appointments/${appointmentId}/confirm`, {
+    const data = await api(`/appointments/${encodeURIComponent(appointmentId)}/confirm`, {
       method: "PATCH"
     });
 
     console.log("Confirm appointment response:", data);
 
+    const row = document.getElementById(
+      `appointment-row-${appointmentId}`
+    );
+
+    if (row) {
+      const cells = row.querySelectorAll("td");
+
+      if (cells[6]) {
+        cells[6].innerHTML =
+          '<span class="badge badge-green">مؤكد</span>';
+      }
+
+      if (cells[7]) {
+        cells[7].innerHTML = "—";
+      }
+    }
+
     notify(
       data.message || "تم تأكيد الموعد بنجاح.",
       "success"
     );
-
-    // البحث عن زر التأكيد الخاص بهذا الموعد
-    const buttons = document.querySelectorAll(".enable-btn");
-
-    let confirmButton = null;
-
-    buttons.forEach(button => {
-      const onclickValue =
-        String(button.getAttribute("onclick") || "");
-
-      if (onclickValue.includes(String(appointmentId))) {
-        confirmButton = button;
-      }
-    });
-
-    if (confirmButton) {
-      const row = confirmButton.closest("tr");
-
-      if (row) {
-        const cells = row.querySelectorAll("td");
-
-        // تغيير الحالة مباشرة إلى مؤكد
-        if (cells[6]) {
-          cells[6].innerHTML =
-            '<span class="badge badge-green">مؤكد</span>';
-        }
-
-        // إزالة أزرار الإجراءات
-        if (cells[7]) {
-          cells[7].textContent = "—";
-        }
-      }
-    }
 
   } catch (error) {
     console.error("Confirm appointment error:", error);
