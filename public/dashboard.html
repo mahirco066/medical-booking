@@ -350,7 +350,8 @@ function renderAppointments(appointments){
       </tr>
     `;
 
-    return;
+   return `
+  <tr id="appointment-row-${escapeHtml(appointment.id)}">
   }
 
   tbody.innerHTML = appointments.map(appointment => {
