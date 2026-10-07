@@ -426,8 +426,7 @@ function renderAppointments(appointments){
     `;
   }).join("");
 }
-  async function confirmAppointment(appointmentId){
-    alert("تم تحميل دالة التأكيد الجديدة");
+ async function confirmAppointment(appointmentId){
   if (!appointmentId) {
     notify("معرف الموعد غير موجود.", "error");
     return;
@@ -444,24 +443,45 @@ function renderAppointments(appointments){
       method: "PATCH"
     });
 
-    console.log("CONFIRM SUCCESS:", data);
+    console.log("Confirm appointment response:", data);
 
     notify(
       data.message || "تم تأكيد الموعد بنجاح.",
       "success"
     );
-    alert("وصلنا إلى ما بعد نجاح التأكيد");
 
-    // إعادة تحميل قائمة المواعيد من الخادم
-   const latestData = await api("/appointments");
+    // البحث عن زر التأكيد الخاص بهذا الموعد
+    const buttons = document.querySelectorAll(".enable-btn");
 
-const latestAppointment = latestData.appointments.find(
-  appointment => String(appointment.id) === String(appointmentId)
-);
+    let confirmButton = null;
 
-alert("الحالة التي أعادها الخادم الآن: " + String(latestAppointment?.status || "غير موجودة"));
+    buttons.forEach(button => {
+      const onclickValue =
+        String(button.getAttribute("onclick") || "");
 
-renderAppointments(latestData.appointments);
+      if (onclickValue.includes(String(appointmentId))) {
+        confirmButton = button;
+      }
+    });
+
+    if (confirmButton) {
+      const row = confirmButton.closest("tr");
+
+      if (row) {
+        const cells = row.querySelectorAll("td");
+
+        // تغيير الحالة مباشرة إلى مؤكد
+        if (cells[6]) {
+          cells[6].innerHTML =
+            '<span class="badge badge-green">مؤكد</span>';
+        }
+
+        // إزالة أزرار الإجراءات
+        if (cells[7]) {
+          cells[7].textContent = "—";
+        }
+      }
+    }
 
   } catch (error) {
     console.error("Confirm appointment error:", error);
