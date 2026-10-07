@@ -430,7 +430,7 @@ function renderAppointments(appointments){
     `;
   }).join("");
 }
-async function confirmAppointment(appointmentId){
+async function confirmAppointment(appointmentId) {
   if (!appointmentId) {
     showToast("معرف الموعد غير موجود.", "error");
     return;
@@ -452,27 +452,16 @@ async function confirmAppointment(appointmentId){
 
     console.log("Confirm appointment response:", data);
 
-    const row = document.getElementById(
-      `appointment-row-${appointmentId}`
-    );
-
-    if (row) {
-      const cells = row.querySelectorAll("td");
-
-      if (cells[6]) {
-        cells[6].innerHTML =
-          '<span class="badge badge-green">مؤكد</span>';
-      }
-
-      if (cells[7]) {
-        cells[7].innerHTML = "—";
-      }
-    }
-
     showToast(
       data.message || "تم تأكيد الموعد بنجاح.",
       "success"
     );
+
+    /*
+     * إعادة تحميل جدول المواعيد من قاعدة البيانات
+     * بدل محاولة تعديل الصف يدويًا.
+     */
+    await loadAppointments();
 
   } catch (error) {
     console.error("Confirm appointment error:", error);
