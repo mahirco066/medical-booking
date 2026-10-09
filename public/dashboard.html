@@ -91,7 +91,7 @@
         </div>
       </section>
 
-      <section id="section-appointments" class="section">
+<section id="section-appointments" class="section">
   <div class="page-title">
     <h2>المواعيد</h2>
     <p>إدارة ومتابعة حجوزات المرضى</p>
@@ -101,11 +101,29 @@
     <div class="panel-header">
       <div>
         <h3>قائمة المواعيد</h3>
-        <p>جميع الحجوزات المسجلة في المنصة</p>
+        <p>تصفية الحجوزات حسب اليوم والطبيب</p>
       </div>
 
       <button id="refreshAppointmentsBtn" class="add-btn" type="button">
         ↻ تحديث المواعيد
+      </button>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:16px 0;">
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:200px;">
+        <label for="appointmentDateFilter">تاريخ الموعد</label>
+        <input id="appointmentDateFilter" type="date">
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:220px;">
+        <label for="appointmentDoctorFilter">الطبيب</label>
+        <select id="appointmentDoctorFilter">
+          <option value="">جميع الأطباء</option>
+        </select>
+      </div>
+
+      <button id="clearAppointmentFiltersBtn" class="add-btn" type="button">
+        مسح التصفية
       </button>
     </div>
 
@@ -135,6 +153,7 @@
     </div>
   </div>
 </section>
+
       <section id="section-patients" class="section"><div class="page-title"><h2>المرضى</h2><p>إدارة حسابات المرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">👥</div><strong>إدارة المرضى</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
       <section id="section-services" class="section"><div class="page-title"><h2>الخدمات الطبية</h2><p>الخدمات التي يمكن للمريض حجزها</p></div><div class="panel"><div class="empty"><div class="empty-icon">🩺</div><strong>إدارة الخدمات</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
       <section id="section-records" class="section"><div class="page-title"><h2>السجلات الطبية</h2><p>متابعة السجلات الطبية للمرضى</p></div><div class="panel"><div class="empty"><div class="empty-icon">📋</div><strong>السجلات الطبية</strong><div style="margin-top:5px;font-size:12px;">سيتم تفعيلها في المرحلة التالية.</div></div></div></section>
