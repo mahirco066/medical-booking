@@ -126,6 +126,32 @@
         مسح التصفية
       </button>
     </div>
+```html
+<!-- ملخص المواعيد -->
+<div id="appointmentSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:20px 0;">
+
+  <div style="background:#e8f1ff;border-right:5px solid #2563eb;border-radius:12px;padding:18px;">
+    <div style="color:#1e40af;font-size:14px;">إجمالي المواعيد</div>
+    <strong id="summaryTotal" style="display:block;font-size:30px;color:#1d4ed8;margin-top:8px;">0</strong>
+  </div>
+
+  <div style="background:#fff4df;border-right:5px solid #f59e0b;border-radius:12px;padding:18px;">
+    <div style="color:#92400e;font-size:14px;">بانتظار التأكيد</div>
+    <strong id="summaryPending" style="display:block;font-size:30px;color:#b45309;margin-top:8px;">0</strong>
+  </div>
+
+  <div style="background:#e5f8ee;border-right:5px solid #16a34a;border-radius:12px;padding:18px;">
+    <div style="color:#166534;font-size:14px;">المواعيد المؤكدة</div>
+    <strong id="summaryConfirmed" style="display:block;font-size:30px;color:#15803d;margin-top:8px;">0</strong>
+  </div>
+
+  <div style="background:#ffebeb;border-right:5px solid #dc2626;border-radius:12px;padding:18px;">
+    <div style="color:#991b1b;font-size:14px;">المواعيد الملغاة</div>
+    <strong id="summaryCancelled" style="display:block;font-size:30px;color:#b91c1c;margin-top:8px;">0</strong>
+  </div>
+
+</div>
+```
 
     <div class="table-wrap">
       <table>
