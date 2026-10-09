@@ -310,6 +310,7 @@ async function loadDoctors(){
     tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">⚠️</div><strong>تعذر تحميل الأطباء</strong><div style="margin-top:5px;font-size:12px">${escapeHtml(error.message)}</div></div></td></tr>`;
   }
 }
+
 async function loadAppointments(){
   const tbody = $("appointmentsTableBody");
 
@@ -326,7 +327,7 @@ async function loadAppointments(){
   try {
     const data = await api("/appointments");
 
-    const appointments = Array.isArray(data?.appointments)
+    appointments = Array.isArray(data?.appointments)
       ? data.appointments
       : [];
 
