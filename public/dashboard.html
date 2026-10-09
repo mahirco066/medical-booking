@@ -195,9 +195,12 @@ const TOKEN_KEY = "medical_booking_token";
 const REFRESH_KEY = "medical_booking_refresh_token";
 const USER_KEY = "medical_booking_user";
 
+
+let appointments = [];
 let doctors = [];
 let editingDoctor = null;
 let pendingImageData = "";
+
 
 function $(id){ return document.getElementById(id); }
 function getToken(){ return localStorage.getItem(TOKEN_KEY) || ""; }
