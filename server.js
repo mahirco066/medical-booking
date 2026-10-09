@@ -1372,6 +1372,47 @@ app.patch("/api/appointments/:id/confirm", requireAuth, async (req, res) => {
     return jsonError(res, 500, "تعذر تأكيد الموعد.");
   }
 });
+
+app.patch("/api/appointments/:id/cancel", requireAuth, async (req, res) => {
+  try {
+    if (req.authUser.type !== "staff") {
+      return jsonError(res, 403, "هذا المسار مخصص للإدارة.");
+    }
+
+    const appointmentId = clean(req.params.id);
+
+    if (!appointmentId) {
+      return jsonError(res, 400, "معرف الموعد غير صحيح.");
+    }
+
+    const result = await pool.query(
+      `UPDATE appointments
+       SET status = 'cancelled',
+           updated_at = NOW()
+       WHERE id = $1
+         AND status IN ('pending', 'confirmed')
+       RETURNING *`,
+      [appointmentId]
+    );
+
+    if (!result.rowCount) {
+      return jsonError(
+        res,
+        404,
+        "الموعد غير موجود أو تم إلغاؤه مسبقًا."
+      );
+    }
+
+    return jsonOk(res, {
+      message: "تم إلغاء الحجز بنجاح.",
+      appointment: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Cancel appointment error:", error);
+    return jsonError(res, 500, "تعذر إلغاء الحجز.");
+  }
+});
+
 app.get("/api/my-appointments", requireAuth, async (req, res) => {
   try {
     if (req.authUser.type !== "patient") {
