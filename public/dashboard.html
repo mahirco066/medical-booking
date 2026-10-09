@@ -665,7 +665,71 @@ async function toggleDoctor(id,enable){
 
 
 let selectedScheduleDoctor=null; let doctorSchedules=[]; const scheduleDayNames={0:"الأحد",1:"الإثنين",2:"الثلاثاء",3:"الأربعاء",4:"الخميس",5:"الجمعة",6:"السبت"}; function normalizeSchedulesResponse(d){return Array.isArray(d)?d:Array.isArray(d?.schedules)?d.schedules:Array.isArray(d?.doctor_schedules)?d.doctor_schedules:Array.isArray(d?.data)?d.data:[]} function scheduleTime(v){return v==null?"":String(v).slice(0,5)} function resetScheduleForm(){$("scheduleForm").reset();$("scheduleId").value="";$("scheduleDuration").value="30";$("scheduleActive").checked=true;$("scheduleFormTitle").textContent="إضافة فترة دوام";$("scheduleEditingNote").classList.remove("show");$("saveScheduleBtn").textContent="حفظ الدوام"} function openScheduleModal(id){const d=doctors.find(x=>String(x.id)===String(id));if(!d){showToast("لم يتم العثور على الطبيب.","error");return} selectedScheduleDoctor=d;$("scheduleDoctorInfo").innerHTML=`<div class="schedule-doctor-icon">👨‍⚕️</div><div><div class="schedule-doctor-name">${escapeHtml(d.full_name||"بدون اسم")}</div><div class="schedule-doctor-meta">${escapeHtml(d.specialty||"")}${d.area?` · ${escapeHtml(d.area)}`:""}</div></div>`;resetScheduleForm();$("scheduleModalOverlay").classList.remove("hidden");loadDoctorSchedules()} function closeScheduleModal(){$("scheduleModalOverlay").classList.add("hidden");selectedScheduleDoctor=null;doctorSchedules=[];resetScheduleForm()} async function loadDoctorSchedules(){if(!selectedScheduleDoctor?.id)return;const b=$("doctorSchedulesBody");b.innerHTML='<div class="schedule-empty">جارٍ تحميل دوام الطبيب...</div>';try{const d=await api("/admin/doctors/"+encodeURIComponent(selectedScheduleDoctor.id)+"/schedules");doctorSchedules=normalizeSchedulesResponse(d);renderDoctorSchedules()}catch(e){b.innerHTML=`<div class="schedule-empty">⚠️ تعذر تحميل دوام الطبيب<br><span>${escapeHtml(e.message)}</span></div>`}} function renderDoctorSchedules(){const b=$("doctorSchedulesBody");if(!doctorSchedules.length){b.innerHTML='<div class="schedule-empty">🕐<br><strong>لا يوجد دوام محفوظ لهذا الطبيب</strong><div>أضف أول فترة دوام من النموذج أعلاه.</div></div>';return} const s=[...doctorSchedules].sort((a,b)=>Number(a.day_of_week)-Number(b.day_of_week)||scheduleTime(a.start_time).localeCompare(scheduleTime(b.start_time)));b.innerHTML=s.map(x=>{const id=escapeHtml(String(x.id||"")),active=x.active!==false;return `<div class="schedule-row"><div>${scheduleDayNames[Number(x.day_of_week)]||"غير محدد"}</div><div>${scheduleTime(x.start_time)}</div><div>${scheduleTime(x.end_time)}</div><div>${Number(x.slot_duration_minutes||30)} دقيقة</div><div class="${active?"schedule-status-active":"schedule-status-off"}">${active?"● نشط":"● معطل"}</div><div class="schedule-actions"><button class="schedule-action schedule-edit" onclick="editSchedule('${id}')">تعديل</button><button class="schedule-action schedule-toggle" onclick="toggleSchedule('${id}',${!active})">${active?"تعطيل":"تفعيل"}</button><button class="schedule-action schedule-delete" onclick="deleteSchedule('${id}')">حذف</button></div></div>`}).join("")} function editSchedule(id){const s=doctorSchedules.find(x=>String(x.id)===String(id));if(!s)return;$("scheduleId").value=s.id;$("scheduleDay").value=String(s.day_of_week);$("scheduleStart").value=scheduleTime(s.start_time);$("scheduleEnd").value=scheduleTime(s.end_time);$("scheduleDuration").value=String(s.slot_duration_minutes||30);$("scheduleActive").checked=s.active!==false;$("scheduleFormTitle").textContent="تعديل فترة الدوام";$("scheduleEditingNote").classList.add("show");$("saveScheduleBtn").textContent="تحديث الدوام"} async function saveSchedule(e){e.preventDefault();if(!selectedScheduleDoctor?.id)return;const id=$("scheduleId").value.trim(),day=Number($("scheduleDay").value),start=$("scheduleStart").value,end=$("scheduleEnd").value,duration=Number($("scheduleDuration").value),active=$("scheduleActive").checked;if(!Number.isInteger(day)||day<0||day>6)return showToast("اختر يوم الدوام.","error");if(!start||!end)return showToast("حدد وقت البداية والنهاية.","error");if(start>=end)return showToast("وقت البداية يجب أن يكون قبل وقت النهاية.","error");const btn=$("saveScheduleBtn");btn.disabled=true;try{const payload={day_of_week:day,start_time:start,end_time:end,slot_duration_minutes:duration,active};const d=id?await api("/admin/doctor-schedules/"+encodeURIComponent(id),{method:"PUT",body:JSON.stringify(payload)}):await api("/admin/doctors/"+encodeURIComponent(selectedScheduleDoctor.id)+"/schedules",{method:"POST",body:JSON.stringify(payload)});showToast(d?.message||(id?"تم تحديث الدوام بنجاح.":"تم حفظ الدوام بنجاح."));resetScheduleForm();await loadDoctorSchedules()}catch(e){showToast(e.message||"تعذر حفظ الدوام.","error")}finally{btn.disabled=false;btn.textContent="حفظ الدوام"}} async function toggleSchedule(id,enable){const s=doctorSchedules.find(x=>String(x.id)===String(id));if(!s)return;if(!confirm((enable?"هل تريد تفعيل":"هل تريد تعطيل")+" هذا الدوام؟"))return;try{const d=await api("/admin/doctor-schedules/"+encodeURIComponent(id)+"/status",{method:"PATCH",body:JSON.stringify({active:enable})});showToast(d?.message||(enable?"تم تفعيل الدوام.":"تم تعطيل الدوام."));await loadDoctorSchedules()}catch(e){showToast(e.message||"تعذر تغيير حالة الدوام.","error")}} async function deleteSchedule(id){if(!confirm("هل تريد حذف فترة الدوام؟"))return;try{const d=await api("/admin/doctor-schedules/"+encodeURIComponent(id),{method:"DELETE"});showToast(d?.message||"تم حذف الدوام.");await loadDoctorSchedules()}catch(e){showToast(e.message||"تعذر حذف الدوام.","error")}}
-async function initializeDashboard(){setupNavigation();await Promise.all([loadSystemStatus(),loadDoctors(),loadStats()])}
+
+async function initializeDashboard() {
+  setupNavigation();
+
+  await Promise.all([
+    loadSystemStatus(),
+    loadDoctors(),
+    loadStats()
+  ]);
+}
+
+function populateAppointmentDoctorFilter() {
+  const select = $("appointmentDoctorFilter");
+  if (!select) return;
+
+  const selectedValue = select.value;
+
+  select.innerHTML = `
+    <option value="">جميع الأطباء</option>
+    ${doctors.map(doctor => `
+      <option value="${escapeHtml(String(doctor.id))}">
+        ${escapeHtml(doctor.full_name || "طبيب بدون اسم")}
+      </option>
+    `).join("")}
+  `;
+
+  if (doctors.some(doctor => String(doctor.id) === selectedValue)) {
+    select.value = selectedValue;
+  }
+}
+
+function setupAppointmentFilters() {
+  const dateFilter = $("appointmentDateFilter");
+  const doctorFilter = $("appointmentDoctorFilter");
+  const clearButton = $("clearAppointmentFiltersBtn");
+  const refreshButton = $("refreshAppointmentsBtn");
+
+  if (dateFilter && !dateFilter.dataset.bound) {
+    dateFilter.addEventListener("change", filterAppointments);
+    dateFilter.dataset.bound = "true";
+  }
+
+  if (doctorFilter && !doctorFilter.dataset.bound) {
+    doctorFilter.addEventListener("change", filterAppointments);
+    doctorFilter.dataset.bound = "true";
+  }
+
+  if (clearButton && !clearButton.dataset.bound) {
+    clearButton.addEventListener("click", () => {
+      if (dateFilter) dateFilter.value = "";
+      if (doctorFilter) doctorFilter.value = "";
+      filterAppointments();
+    });
+    clearButton.dataset.bound = "true";
+  }
+
+  if (refreshButton && !refreshButton.dataset.bound) {
+    refreshButton.addEventListener("click", async () => {
+      await loadAppointments();
+    });
+    refreshButton.dataset.bound = "true";
+  }
+
+  populateAppointmentDoctorFilter();
+}
 
 $("adminLoginForm").addEventListener("submit",login);
 $("logoutBtn").addEventListener("click",logout);
