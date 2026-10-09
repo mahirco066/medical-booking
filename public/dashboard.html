@@ -355,6 +355,25 @@ async function loadAppointments(){
   }
 }
 
+function filterAppointments() {
+  const dateFilter = $("appointmentDateFilter")?.value || "";
+  const doctorFilter = $("appointmentDoctorFilter")?.value || "";
+
+  const filteredAppointments = appointments.filter(appointment => {
+    const matchesDate =
+      !dateFilter ||
+      String(appointment.appointment_date || "").slice(0, 10) === dateFilter;
+
+    const matchesDoctor =
+      !doctorFilter ||
+      String(appointment.doctor_id || "") === doctorFilter;
+
+    return matchesDate && matchesDoctor;
+  });
+
+  renderAppointments(filteredAppointments);
+}
+
 function renderAppointments(appointments){
   const tbody = $("appointmentsTableBody");
 
