@@ -381,6 +381,7 @@ async function loadAppointments(){
   }
 }
 
+```js
 function filterAppointments() {
   const dateFilter = $("appointmentDateFilter")?.value || "";
   const doctorFilter = $("appointmentDoctorFilter")?.value || "";
@@ -397,9 +398,42 @@ function filterAppointments() {
     return matchesDate && matchesDoctor;
   });
 
+  // تحديث جدول المواعيد
   renderAppointments(filteredAppointments);
-}
 
+  // حساب ملخص المواعيد حسب التصفية الحالية
+  const total = filteredAppointments.length;
+
+  const pending = filteredAppointments.filter(
+    appointment => appointment.status === "pending"
+  ).length;
+
+  const confirmed = filteredAppointments.filter(
+    appointment => appointment.status === "confirmed"
+  ).length;
+
+  const cancelled = filteredAppointments.filter(
+    appointment => appointment.status === "cancelled"
+  ).length;
+
+  // عرض الأعداد في البطاقات
+  if ($("summaryTotal")) {
+    $("summaryTotal").textContent = total;
+  }
+
+  if ($("summaryPending")) {
+    $("summaryPending").textContent = pending;
+  }
+
+  if ($("summaryConfirmed")) {
+    $("summaryConfirmed").textContent = confirmed;
+  }
+
+  if ($("summaryCancelled")) {
+    $("summaryCancelled").textContent = cancelled;
+  }
+}
+```
 function renderAppointments(appointments){
   const tbody = $("appointmentsTableBody");
 
