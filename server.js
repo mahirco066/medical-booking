@@ -2247,6 +2247,43 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
   }
 });
 
+app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
+  try {
+    const appointmentDate = clean(req.body.appointment_date);
+    const appointmentTime = clean(req.body.appointment_time);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate)) {
+      return jsonError(res, 400, "تاريخ الموعد غير صحيح.");
+    }
+
+    if (!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(appointmentTime)) {
+      return jsonError(res, 400, "وقت الموعد غير صحيح.");
+    }
+
+    const result = await pool.query(
+      `UPDATE appointments
+       SET appointment_date = $1::date,
+           appointment_time = $2::time,
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [appointmentDate, appointmentTime, req.params.id]
+    );
+
+    if (!result.rowCount) {
+      return jsonError(res, 404, "الموعد غير موجود.");
+    }
+
+    return jsonOk(res, {
+      message: "تم تعديل تاريخ ووقت الموعد بنجاح.",
+      appointment: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Edit appointment error:", error);
+    return jsonError(res, 500, "تعذر تعديل الموعد.");
+  }
+});
+
 app.delete("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
