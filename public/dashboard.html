@@ -649,7 +649,8 @@ function closeAppointmentEdit() {
   $("editAppointmentModal").style.display = "none";
 }
 
-$("editAppointmentForm")?.addEventListener("submit", async function(event) {
+document.addEventListener("DOMContentLoaded", function() {
+  $("editAppointmentForm")?.addEventListener("submit", async function(event) {
   event.preventDefault();
 
   const appointmentId = $("editAppointmentId").value;
@@ -695,7 +696,8 @@ $("editAppointmentForm")?.addEventListener("submit", async function(event) {
   } finally {
     saveButton.disabled = false;
     saveButton.textContent = "حفظ التعديل";
-  }
+     }
+  });
 });
 
 function renderDoctors(){
