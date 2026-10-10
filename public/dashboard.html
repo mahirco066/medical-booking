@@ -612,6 +612,82 @@ async function cancelAppointment(appointmentId) {
   }
 }
 
+function openAppointmentEdit(appointmentId) {
+  const appointment = appointments.find(
+    item => String(item.id) === String(appointmentId)
+  );
+
+  if (!appointment) {
+    showToast("لم يتم العثور على الموعد.", "error");
+    return;
+  }
+
+  $("editAppointmentId").value = appointment.id;
+  $("editAppointmentPatient").textContent =
+    appointment.patient_name || "بيانات الموعد";
+
+  $("editAppointmentDate").value =
+    String(appointment.appointment_date || "").slice(0, 10);
+
+  $("editAppointmentTime").value =
+    String(appointment.appointment_time || "").slice(0, 5);
+
+  $("editAppointmentModal").style.display = "flex";
+}
+
+function closeAppointmentEdit() {
+  $("editAppointmentModal").style.display = "none";
+}
+
+$("editAppointmentForm")?.addEventListener("submit", async function(event) {
+  event.preventDefault();
+
+  const appointmentId = $("editAppointmentId").value;
+  const appointmentDate = $("editAppointmentDate").value;
+  const appointmentTime = $("editAppointmentTime").value;
+  const saveButton = $("saveAppointmentEdit");
+
+  if (!appointmentId || !appointmentDate || !appointmentTime) {
+    showToast("يرجى إدخال تاريخ الموعد ووقته.", "error");
+    return;
+  }
+
+  saveButton.disabled = true;
+  saveButton.textContent = "جارٍ الحفظ...";
+
+  try {
+    const data = await api(
+      `/admin/appointments/${encodeURIComponent(appointmentId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          appointment_date: appointmentDate,
+          appointment_time: appointmentTime
+        })
+      }
+    );
+
+    closeAppointmentEdit();
+
+    showToast(
+      data.message || "تم تعديل الموعد بنجاح.",
+      "success"
+    );
+
+    await loadAppointments();
+  } catch (error) {
+    console.error("Edit appointment error:", error);
+
+    showToast(
+      error.message || "تعذر تعديل الموعد.",
+      "error"
+    );
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "حفظ التعديل";
+  }
+});
+
 function renderDoctors(){
   const tbody=$("doctorsTableBody");
   if(!doctors.length){tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">👨‍⚕️</div><strong>لا يوجد أطباء حاليًا</strong><div style="margin-top:5px;font-size:12px">اضغط «إضافة طبيب» لإضافة أول طبيب.</div></div></td></tr>`;return;}
