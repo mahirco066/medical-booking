@@ -815,5 +815,36 @@ $("doctorModalOverlay").addEventListener("click",event=>{if(event.target===$("do
   }
 })();
 </script>
+  
+<div id="editAppointmentModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:9999;align-items:center;justify-content:center;padding:20px;direction:rtl">
+  <div style="background:#fff;width:100%;max-width:420px;border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+    <h3 style="margin:0 0 8px;color:#173b57">تعديل الموعد</h3>
+    <p id="editAppointmentPatient" style="margin:0 0 20px;color:#64748b;font-size:14px"></p>
+
+    <form id="editAppointmentForm">
+      <input type="hidden" id="editAppointmentId">
+
+      <label for="editAppointmentDate" style="display:block;margin-bottom:7px;font-weight:600">تاريخ الموعد</label>
+      <input id="editAppointmentDate" type="date" required
+        style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #cbd5e1;border-radius:9px;margin-bottom:16px">
+
+      <label for="editAppointmentTime" style="display:block;margin-bottom:7px;font-weight:600">وقت الموعد</label>
+      <input id="editAppointmentTime" type="time" required
+        style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #cbd5e1;border-radius:9px;margin-bottom:22px">
+
+      <div style="display:flex;gap:10px">
+        <button type="submit" id="saveAppointmentEdit"
+          style="flex:1;background:#087f8c;color:#fff;border:0;border-radius:9px;padding:12px;cursor:pointer">
+          حفظ التعديل
+        </button>
+        <button type="button" onclick="closeAppointmentEdit()"
+          style="flex:1;background:#e2e8f0;color:#334155;border:0;border-radius:9px;padding:12px;cursor:pointer">
+          إلغاء
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 </body>
 </html>
