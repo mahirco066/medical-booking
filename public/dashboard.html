@@ -507,7 +507,16 @@ function renderAppointments(appointments){
           ${statusHtml}
         </td>
 
+       
         <td>
+          <button
+            class="action-btn"
+            type="button"
+            style="background:#dbeafe;color:#1d4ed8;margin:2px"
+            onclick="openAppointmentEdit('${escapeHtml(appointment.id)}')">
+            تعديل
+          </button>
+
           ${
             status === "pending"
               ? `
@@ -525,9 +534,10 @@ function renderAppointments(appointments){
                   إلغاء
                 </button>
               `
-              : "—"
+              : ""
           }
         </td>
+
       </tr>
     `;
   }).join("");
