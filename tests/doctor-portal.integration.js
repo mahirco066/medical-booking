@@ -76,12 +76,14 @@ async function main() {
   const serviceId = serviceResult.rows[0]?.id || null;
   const appointmentAId = crypto.randomUUID();
   const appointmentBId = crypto.randomUUID();
+  const appointmentConflictId = crypto.randomUUID();
   const date = "2099-01-15";
 
   await pool.query(
-    "INSERT INTO appointments (id,doctor_id,service_id,patient_name,patient_phone,appointment_date,appointment_time,status) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending'),($8,$9,$3,$10,$11,$6,$12,'pending')",
+    "INSERT INTO appointments (id,doctor_id,service_id,patient_name,patient_phone,appointment_date,appointment_time,status) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending'),($8,$9,$3,$10,$11,$6,$12,'pending'),($13,$2,$3,$14,$15,$6,$16,'pending')",
     [appointmentAId, doctorA.id, serviceId, "Patient A", "000000001", date, "09:00",
-     appointmentBId, doctorB.id, "Patient B", "000000002", "10:00"]
+     appointmentBId, doctorB.id, "Patient B", "000000002", "10:00",
+     appointmentConflictId, "Patient C", "000000003", "10:00"]
   );
 
   const listA = await request("/api/doctor/appointments", { token: doctorAUser.token });
@@ -120,6 +122,43 @@ async function main() {
     body: { day_of_week: 2, start_time: "09:00", end_time: "12:00", slot_duration_minutes: 30 }
   });
   expectStatus(scheduleCreated, 200, "Doctor can create own schedule");
+
+  const dateDay = new Date(date + "T00:00:00Z").getUTCDay();
+  const scheduleForDate = await request("/api/doctor/schedules", {
+    token: doctorAUser.token, method: "POST",
+    body: { day_of_week: dateDay, start_time: "09:00", end_time: "12:00", slot_duration_minutes: 30 }
+  });
+  expectStatus(scheduleForDate, 200, "Doctor can create schedule for appointment date");
+
+  const outsideHours = await request(`/api/doctor/appointments/${appointmentAId}`, {
+    token: doctorAUser.token, method: "PATCH",
+    body: { appointment_date: date, appointment_time: "12:30" }
+  });
+  expectStatus(outsideHours, 409, "Appointment cannot be moved outside active schedule");
+
+  const occupiedSlot = await request(`/api/doctor/appointments/${appointmentAId}`, {
+    token: doctorAUser.token, method: "PATCH",
+    body: { appointment_date: date, appointment_time: "10:00" }
+  });
+  expectStatus(occupiedSlot, 409, "Appointment cannot be moved to another booked slot");
+
+  const validReschedule = await request(`/api/doctor/appointments/${appointmentAId}`, {
+    token: doctorAUser.token, method: "PATCH",
+    body: { appointment_date: date, appointment_time: "09:30" }
+  });
+  expectStatus(validReschedule, 200, "Appointment can be moved to a free slot within active schedule");
+  assert.equal(String(validReschedule.data.appointment.appointment_time).slice(0, 5), "09:30");
+
+  const disableSchedule = await request(`/api/doctor/schedules/${scheduleForDate.data.schedule.id}/status`, {
+    token: doctorAUser.token, method: "PATCH", body: { active: false }
+  });
+  expectStatus(disableSchedule, 200, "Doctor can disable a schedule");
+
+  const disabledScheduleReschedule = await request(`/api/doctor/appointments/${appointmentAId}`, {
+    token: doctorAUser.token, method: "PATCH",
+    body: { appointment_date: date, appointment_time: "11:00" }
+  });
+  expectStatus(disabledScheduleReschedule, 409, "Appointment cannot be moved into disabled schedule");
 
   const disableDoctor = await request(`/api/admin/doctors/${doctorA.id}/status`, {
     token: admin.token, method: "PATCH", body: { active: false }
