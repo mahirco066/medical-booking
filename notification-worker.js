@@ -28,13 +28,31 @@ function messageFor(row) {
   const date = formatAppointmentDate(p.appointment_date);
   const time = String(p.appointment_time || "").slice(0, 5);
   const doctor = p.doctor_name || "الطبيب";
+  const patient = p.patient_name || "المريض";
+  const isPatient = row.recipient_role === "patient";
   switch (row.event_type) {
-    case "booked": return "طلب حجزك لدى " + doctor + " يوم " + date + " الساعة " + time + " بانتظار التأكيد.";
-    case "confirmed": return "تم تأكيد موعدك لدى " + doctor + " يوم " + date + " الساعة " + time + ".";
-    case "cancelled": return "تم إلغاء الموعد لدى " + doctor + " بتاريخ " + date + " الساعة " + time + ".";
-    case "rescheduled": return "تم تعديل الموعد لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ".";
-    case "reminder_24h": return "تذكير: لديك موعد لدى " + doctor + " يوم " + date + " الساعة " + time + ".";
-    default: throw new Error("Unsupported notification event type");
+    case "booked":
+      return isPatient
+        ? "تم استلام طلب حجزك لدى " + doctor + " يوم " + date + " الساعة " + time + "، وهو بانتظار التأكيد."
+        : "طلب حجز جديد: " + patient + " لدى " + doctor + " يوم " + date + " الساعة " + time + ". يرجى مراجعة الطلب.";
+    case "confirmed":
+      return isPatient
+        ? "تم تأكيد موعدك لدى " + doctor + " يوم " + date + " الساعة " + time + "."
+        : "تم تأكيد موعد " + patient + " لدى " + doctor + " يوم " + date + " الساعة " + time + ".";
+    case "cancelled":
+      return isPatient
+        ? "تم إلغاء موعدك لدى " + doctor + " بتاريخ " + date + " الساعة " + time + "."
+        : "تم إلغاء موعد " + patient + " لدى " + doctor + " بتاريخ " + date + " الساعة " + time + ".";
+    case "rescheduled":
+      return isPatient
+        ? "تم تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "."
+        : "تم تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ".";
+    case "reminder_24h":
+      return isPatient
+        ? "تذكير: لديك موعد لدى " + doctor + " يوم " + date + " الساعة " + time + "."
+        : "تذكير بموعد " + patient + " لدى " + doctor + " يوم " + date + " الساعة " + time + ".";
+    default:
+      throw new Error("Unsupported notification event type");
   }
 }
 
