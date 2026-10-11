@@ -323,6 +323,7 @@ async function initDatabase() {
       id UUID PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      password_salt TEXT,
       full_name TEXT NOT NULL,
       phone TEXT,
       whatsapp_phone TEXT,
@@ -526,8 +527,8 @@ async function initDatabase() {
 
   const compatibilityColumns = [
     ["users", "password_hash", "TEXT"],
+    ["users", "password_salt", "TEXT"],
     ["users", "username", "TEXT"],
-    ["users", "password_hash", "TEXT"],
     ["users", "full_name", "TEXT"],
     ["users", "role", "TEXT NOT NULL DEFAULT 'patient'"],
     ["users", "active", "BOOLEAN NOT NULL DEFAULT TRUE"],
