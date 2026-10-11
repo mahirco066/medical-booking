@@ -223,6 +223,33 @@ async function main() {
   expectStatus(validReschedule, 200, "Appointment can be moved to a free slot within active schedule");
   assert.equal(String(validReschedule.data.appointment.appointment_time).slice(0, 5), "09:30");
 
+  // Preserve login compatibility for legacy patient hashes stored as "salt:hash".
+  const legacyPatientUsername = `legacy_patient_${suffix}`;
+  const legacyPatientId = crypto.randomUUID();
+  const legacyUserId = crypto.randomUUID();
+  const legacyPassword = "LegacyPatientPass123";
+  const legacySalt = crypto.randomBytes(16).toString("hex");
+  const legacyHash = await new Promise((resolve, reject) => {
+    crypto.scrypt(legacyPassword, legacySalt, 64, (error, derivedKey) => {
+      if (error) return reject(error);
+      resolve(derivedKey.toString("hex"));
+    });
+  });
+  await pool.query(
+    "INSERT INTO users (id,username,password_hash,password_salt,full_name,phone,role,active) VALUES ($1,$2,$3,NULL,$4,$5,'patient',TRUE)",
+    [legacyUserId, legacyPatientUsername, `${legacySalt}:${legacyHash}`, "Legacy Test Patient", "000000099"]
+  );
+  await pool.query(
+    "INSERT INTO patients (id,user_id,username,full_name,phone,active) VALUES ($1,$2,$3,$4,$5,TRUE)",
+    [legacyPatientId, legacyUserId, legacyPatientUsername, "Legacy Test Patient", "000000099"]
+  );
+  const legacyLogin = await request("/api/login", {
+    method: "POST",
+    body: { username: legacyPatientUsername, password: legacyPassword }
+  });
+  expectStatus(legacyLogin, 200, "Legacy patient with combined salt/hash can still log in");
+  assert.ok(legacyLogin.data.token, "Legacy patient login should return an access token");
+
   // Exercise the public booking endpoint with two different patients racing for the same doctor slot.
   const patientAUsername = `race_patient_a_${suffix}`;
   const patientBUsername = `race_patient_b_${suffix}`;
