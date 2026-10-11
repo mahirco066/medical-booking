@@ -15,7 +15,7 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: process.env.NODE_ENV === "test" ? false : { rejectUnauthorized: false }
 });
 
 app.use(express.json({ limit: "10mb" }));
