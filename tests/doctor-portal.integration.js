@@ -72,6 +72,27 @@ async function main() {
   assert.equal(secretary.user.role, "secretary");
   assert.equal(secretary.user.doctor_id, doctorA.id);
 
+  const secretaryList = await request("/api/doctor/secretaries", { token: doctorAUser.token });
+  expectStatus(secretaryList, 200, "Doctor can list own secretaries");
+  assert.ok(secretaryList.data.secretaries.some(s => s.id === secretaryCreated.data.secretary.id), "Doctor should see the secretary account they created");
+
+  const secondSecretaryCreated = await request("/api/doctor/secretaries", {
+    token: doctorAUser.token, method: "POST",
+    body: { full_name: "Test Secretary To Disable", username: `sec_disable_${suffix}`, password: "TestSecretaryPass123" }
+  });
+  expectStatus(secondSecretaryCreated, 200, "Doctor can create a second secretary");
+
+  const secondSecretaryDisabled = await request(`/api/doctor/secretaries/${secondSecretaryCreated.data.secretary.id}/status`, {
+    token: doctorAUser.token, method: "PATCH", body: { active: false }
+  });
+  expectStatus(secondSecretaryDisabled, 200, "Doctor can disable a secretary");
+  assert.equal(secondSecretaryDisabled.data.secretary.active, false, "Disabled secretary should be inactive");
+
+  const disabledSecretaryLogin = await request("/api/staff/login", {
+    method: "POST", body: { username: `sec_disable_${suffix}`, password: "TestSecretaryPass123" }
+  });
+  expectStatus(disabledSecretaryLogin, 403, "Disabled secretary cannot log in");
+
   const serviceResult = await pool.query("SELECT id FROM services WHERE active=TRUE ORDER BY name LIMIT 1");
   const serviceId = serviceResult.rows[0]?.id || null;
   const appointmentAId = crypto.randomUUID();
@@ -97,6 +118,12 @@ async function main() {
   const listSecretary = await request("/api/doctor/appointments", { token: secretary.token });
   expectStatus(listSecretary, 200, "Secretary appointments list");
   assert.deepEqual(listSecretary.data.appointments.map(a => a.id).sort(), [appointmentAId, appointmentConflictId].sort(), "Secretary must only see their doctor's appointments");
+
+  const secretaryConfirmsOwnDoctorAppointment = await request(`/api/doctor/appointments/${appointmentAId}/status`, {
+    token: secretary.token, method: "PATCH", body: { status: "confirmed" }
+  });
+  expectStatus(secretaryConfirmsOwnDoctorAppointment, 200, "Secretary can update appointment status for their own doctor");
+  assert.equal(secretaryConfirmsOwnDoctorAppointment.data.appointment.status, "confirmed");
 
   const crossDoctorEdit = await request(`/api/doctor/appointments/${appointmentBId}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
