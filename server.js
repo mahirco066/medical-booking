@@ -147,9 +147,10 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
   if (!allowed.has(eventType)) throw new Error("Unsupported notification event");
 
   const appointment = await pool.query(
-    `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,a.patient_phone,
+    `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,
+            COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
             a.appointment_date,a.appointment_time,a.status,
-            p.whatsapp_phone AS patient_whatsapp,
+            COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS patient_whatsapp,
             d.full_name AS doctor_name,
             d.phone AS doctor_phone,
             COALESCE(
@@ -160,6 +161,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
             ) AS doctor_whatsapp
        FROM appointments a
        LEFT JOIN patients p ON p.id=a.patient_id
+       LEFT JOIN users pu ON pu.id=p.user_id
        LEFT JOIN doctors d ON d.id=a.doctor_id
        LEFT JOIN users du ON du.id=d.user_id
       WHERE a.id=$1 LIMIT 1`,
@@ -203,6 +205,14 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
         `UPDATE notification_outbox
             SET status='cancelled',locked_at=NULL,updated_at=NOW()
           WHERE appointment_id=$1 AND event_type <> 'cancelled'
+            AND status IN ('pending','failed')`,
+        [a.id]
+      );
+    } else if (eventType === "confirmed") {
+      await client.query(
+        `UPDATE notification_outbox
+            SET status='cancelled',locked_at=NULL,updated_at=NOW()
+          WHERE appointment_id=$1 AND event_type='booked'
             AND status IN ('pending','failed')`,
         [a.id]
       );
