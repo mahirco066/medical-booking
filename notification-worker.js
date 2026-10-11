@@ -39,7 +39,7 @@ function messageFor(row) {
 }
 
 async function sendTwilioSms(to, body) {
-  if (!/^\\+[1-9]\\d{7,14}$/.test(String(to || "").trim())) {
+  if (!/^\+[1-9]\d{7,14}$/.test(String(to || "").trim())) {
     throw new Error("Recipient phone must be in international E.164 format");
   }
   const endpoint = "https://api.twilio.com/2010-04-01/Accounts/" + SID + "/Messages.json";
@@ -66,7 +66,7 @@ async function claimOne() {
       " a.status AS current_status,a.appointment_date::text AS current_date,to_char(a.appointment_time,'HH24:MI') AS current_time" +
       " FROM notification_outbox n JOIN appointments a ON a.id=n.appointment_id" +
       " WHERE n.channel='sms' AND n.status IN ('pending','failed') AND n.scheduled_at <= NOW() AND n.attempts < $1" +
-      " ORDER BY n.scheduled_at,n.created_at FOR UPDATE OF n SKIP LOCKED LIMIT 1",
+      " ORDER BY n.scheduled_at,n.created_at LIMIT 1 FOR UPDATE OF n SKIP LOCKED",
       [MAX_ATTEMPTS]
     );
     if (!result.rowCount) { await client.query("COMMIT"); return null; }
