@@ -339,6 +339,7 @@ async function initDatabase() {
     CREATE TABLE IF NOT EXISTS patients (
       id UUID PRIMARY KEY,
       user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT,
       full_name TEXT NOT NULL,
       phone TEXT,
       whatsapp_phone TEXT,
@@ -539,6 +540,7 @@ async function initDatabase() {
     ["users", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
 
     ["patients", "user_id", "UUID"],
+    ["patients", "username", "TEXT"],
     ["patients", "phone", "TEXT"],
     ["patients", "whatsapp_phone", "TEXT"],
     ["patients", "email", "TEXT"],
