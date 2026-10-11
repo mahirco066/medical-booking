@@ -2,10 +2,17 @@
 
 const { Pool } = require("pg");
 const { isNotificationRelevant } = require("./notification-utils");
-const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM", "NOTIFICATION_SEND_ENABLED"];
+const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "NOTIFICATION_SEND_ENABLED"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
   console.error("Notification worker not started. Missing environment variables: " + missing.join(", "));
+  process.exit(1);
+}
+const SMS_FROM = process.env.TWILIO_SMS_FROM || "";
+const WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
+const ENABLED_CHANNELS = [SMS_FROM ? "sms" : null, WHATSAPP_FROM ? "whatsapp" : null].filter(Boolean);
+if (!ENABLED_CHANNELS.length) {
+  console.error("Notification worker not started. Configure TWILIO_SMS_FROM and/or TWILIO_WHATSAPP_FROM.");
   process.exit(1);
 }
 if (String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
@@ -16,7 +23,6 @@ if (String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
 const SID = process.env.TWILIO_ACCOUNT_SID;
 const TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const FROM = process.env.TWILIO_SMS_FROM;
 const INTERVAL_MS = 5000;
 const MAX_ATTEMPTS = 5;
 let stopping = false;
@@ -61,12 +67,20 @@ function messageFor(row) {
   }
 }
 
-async function sendTwilioSms(to, body) {
-  if (!/^\+[1-9]\d{7,14}$/.test(String(to || "").trim())) {
+async function sendTwilioMessage(row) {
+  const channel = row.channel;
+  const rawTo = String(row.recipient_phone || "").trim();
+  if (!/^\+[1-9]\d{7,14}$/.test(rawTo)) {
     throw new Error("Recipient phone must be in international E.164 format");
   }
+  const configuredFrom = channel === "sms" ? SMS_FROM : channel === "whatsapp" ? WHATSAPP_FROM : "";
+  if (!configuredFrom) throw new Error("Twilio sender is not configured for channel: " + channel);
+  const to = channel === "whatsapp" ? "whatsapp:" + rawTo : rawTo;
+  const from = channel === "whatsapp"
+    ? (configuredFrom.startsWith("whatsapp:") ? configuredFrom : "whatsapp:" + configuredFrom)
+    : configuredFrom;
   const endpoint = "https://api.twilio.com/2010-04-01/Accounts/" + SID + "/Messages.json";
-  const form = new URLSearchParams({ To: String(to).trim(), From: FROM, Body: body });
+  const form = new URLSearchParams({ To: to, From: from, Body: messageFor(row) });
   const response = await fetch(endpoint, {
     signal: AbortSignal.timeout(20000),
     method: "POST",
@@ -97,9 +111,9 @@ async function claimOne() {
       "SELECT n.id,n.appointment_id,n.event_type,n.channel,n.recipient_role,n.recipient_phone,n.payload,n.attempts," +
       " a.status AS current_status,a.appointment_date::text AS current_date,to_char(a.appointment_time,'HH24:MI') AS current_time" +
       " FROM notification_outbox n JOIN appointments a ON a.id=n.appointment_id" +
-      " WHERE n.channel='sms' AND n.status IN ('pending','failed') AND n.scheduled_at <= NOW() AND n.attempts < $1" +
+      " WHERE n.channel = ANY($1::text[]) AND n.status IN ('pending','failed') AND n.scheduled_at <= NOW() AND n.attempts < $2" +
       " ORDER BY n.scheduled_at,n.created_at LIMIT 1 FOR UPDATE OF n SKIP LOCKED",
-      [MAX_ATTEMPTS]
+      [ENABLED_CHANNELS, MAX_ATTEMPTS]
     );
     if (!result.rowCount) { await client.query("COMMIT"); return null; }
     const row = result.rows[0];
@@ -153,7 +167,7 @@ async function processOne() {
       await finish(row, "cancelled", "Notification skipped because appointment state or time changed.", null, null);
       return true;
     }
-    const sid = await sendTwilioSms(row.recipient_phone, messageFor(row));
+    const sid = await sendTwilioMessage(row);
     await finish(row, "sent", null, new Date(), sid);
     return true;
   } catch (error) {
