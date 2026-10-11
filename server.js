@@ -149,7 +149,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
   const appointment = await pool.query(
     `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,
             COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
-            a.appointment_date,a.appointment_time,a.status,
+            a.appointment_date,a.appointment_time,a.status,a.updated_at,
             COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS patient_whatsapp,
             d.full_name AS doctor_name,
             d.phone AS doctor_phone,
@@ -222,19 +222,23 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
             SET status='cancelled',locked_at=NULL,updated_at=NOW()
           WHERE appointment_id=$1
             AND event_type IN ('booked','confirmed','rescheduled','reminder_24h')
-            AND status IN ('pending','failed')
-            AND (payload->>'appointment_date' IS DISTINCT FROM $2
-              OR payload->>'appointment_time' IS DISTINCT FROM $3)`,
-        [a.id, dateText, timeText]
+            AND status IN ('pending','failed')`,
+        [a.id]
       );
     }
+
+    // The update timestamp distinguishes a later reschedule back to a previously
+    // used slot from the old, already-cancelled outbox rows for that same slot.
+    const eventVersion = eventType === "rescheduled"
+      ? new Date(a.updated_at || Date.now()).toISOString()
+      : "";
 
     for (const contact of contacts) {
       for (const channel of ["sms", "whatsapp"]) {
         const phone = channel === "sms" ? contact.sms : contact.whatsapp;
         if (!phone || !String(phone).trim()) continue;
         const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
-        const key = `appointment:${a.id}:${eventType}:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}`;
+        const key = `appointment:${a.id}:${eventType}:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}:${eventVersion}`;
         await client.query(
           `INSERT INTO notification_outbox
              (id,appointment_id,event_type,channel,recipient_role,recipient_phone,scheduled_at,idempotency_key,payload)
@@ -256,7 +260,8 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
             const phone = channel === "sms" ? contact.sms : contact.whatsapp;
             if (!phone || !String(phone).trim()) continue;
             const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
-            const key = `appointment:${a.id}:reminder_24h:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}`;
+            const reminderVersion = eventType === "rescheduled" ? eventVersion : "";
+            const key = `appointment:${a.id}:reminder_24h:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}:${reminderVersion}`;
             await client.query(
               `INSERT INTO notification_outbox
                  (id,appointment_id,event_type,channel,recipient_role,recipient_phone,scheduled_at,idempotency_key,payload)
