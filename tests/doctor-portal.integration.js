@@ -125,7 +125,7 @@ async function main() {
   expectStatus(adminCannotUseDoctorAppointments, 403, "Admin token is not accepted as doctor portal token");
 
   const unauthenticated = await request("/api/doctor/appointments");
-  expectStatus(unauthenticated, 401, "Unauthenticated request is rejected");
+  expectStatus(unauthenticated, 403, "Unauthenticated request is rejected by doctor portal guard");
 
   const statusAfterDeniedEdit = await pool.query("SELECT status FROM appointments WHERE id=$1", [appointmentBId]);
   assert.equal(statusAfterDeniedEdit.rows[0].status, "pending", "Denied cross-doctor update must not change database row");
