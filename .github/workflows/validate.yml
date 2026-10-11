@@ -21,5 +21,9 @@ jobs:
         run: node --check server.js
       - name: Check notification worker syntax
         run: node --check notification-worker.js
+      - name: Check notification utility syntax
+        run: node --check notification-utils.js
+      - name: Run notification unit tests
+        run: npm test
       - name: Check browser application syntax
         run: node --check public/app.js
