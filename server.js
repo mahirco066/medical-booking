@@ -2265,9 +2265,23 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
   try{
     const status=clean(req.body.status), allowed=["pending","confirmed","completed","cancelled","no_show"];
     if(!allowed.includes(status))return jsonError(res,400,"حالة الموعد غير صحيحة.");
+    if(req.authUser.role==="secretary"&&!["confirmed","cancelled"].includes(status)){
+      return jsonError(res,403,"يمكن للسكرتير تأكيد الموعد أو إلغاءه فقط.");
+    }
+    const current=await pool.query(
+      "SELECT id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      [req.params.id,req.authUser.doctor_id]
+    );
+    if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+    if(!["pending","confirmed"].includes(current.rows[0].status)){
+      return jsonError(res,409,"لا يمكن تغيير حالة موعد منتهٍ أو ملغى.");
+    }
     const reason=clean(req.body.cancellation_reason||"")||null;
-    const r=await pool.query("UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 RETURNING *",[status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]);
-    if(!r.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+    const r=await pool.query(
+      "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+      [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
+    );
+    if(!r.rowCount)return jsonError(res,409,"تعذر تحديث الموعد؛ ربما تغيرت حالته.");
     return jsonOk(res,{message:"تم تحديث حالة الموعد.",appointment:r.rows[0]});
   }catch(e){console.error("Doctor appointment status error:",e);return jsonError(res,500,"تعذر تحديث حالة الموعد.");}
 });
