@@ -377,6 +377,11 @@
           </div>
 
           <div style="margin-bottom:14px;">
+            <label style="${labelStyle()}">رقم WhatsApp لاستقبال التذكيرات</label>
+            <input id="registerWhatsappPhone" name="whatsapp_phone" required inputmode="tel" autocomplete="tel" placeholder="رقم WhatsApp" style="${fieldStyle()}">
+          </div>
+
+          <div style="margin-bottom:14px;">
             <label style="${labelStyle()}">البريد الإلكتروني <span style="font-weight:400;color:#94a3b8;">(اختياري)</span></label>
             <input
               id="registerEmail"
@@ -459,11 +464,12 @@
     const username = $("#registerUsername")?.value.trim();
     const fullName = $("#registerFullName")?.value.trim();
     const phone = $("#registerPhone")?.value.trim();
+    const whatsappPhone = $("#registerWhatsappPhone")?.value.trim();
     const email = $("#registerEmail")?.value.trim();
     const password = $("#registerPassword")?.value;
     const confirmPassword = $("#registerConfirmPassword")?.value;
 
-    if (!username || !fullName || !phone || !password) {
+    if (!username || !fullName || !phone || !whatsappPhone || !password) {
       notify("يرجى تعبئة جميع الحقول المطلوبة.", "error");
       return;
     }
@@ -492,6 +498,7 @@
           username,
           full_name: fullName,
           phone,
+          whatsapp_phone: whatsappPhone,
           email: email || null,
           password
         })
@@ -1818,10 +1825,10 @@
       })
       .join("");
 
-    createModal(
+    const appointmentsModal = createModal(
       "appointmentsModal",
       "مواعيدي",
-      appointments.length
+      `<div style="margin-bottom:14px;text-align:left"><button id="editPatientContacts" type="button" style="${primaryButtonStyle()}">تعديل أرقام التواصل</button></div>` + (appointments.length
         ? cards
         : `
           <div style="
@@ -1848,9 +1855,33 @@
               يمكنك اختيار طبيب والبدء بحجز موعدك.
             </div>
           </div>
-        `,
+        `),
       "650px"
     );
+    $("#editPatientContacts", appointmentsModal)?.addEventListener("click", openPatientContactEditor);
+  }
+
+  async function openPatientContactEditor() {
+    try {
+      const data = await api("/patient/me");
+      const patient = data.patient || {};
+      const modal = createModal("patientContactModal", "بيانات التواصل", `
+        <form id="patientContactForm">
+          <p style="color:#64748b;font-size:13px;margin-top:0">ستُستخدم هذه الأرقام لتذكيرات المواعيد بعد تفعيل خدمة الرسائل.</p>
+          <div style="margin-bottom:14px"><label style="${labelStyle()}">رقم الهاتف لاستقبال SMS</label><input id="contactPhone" required inputmode="tel" value="${escapeHtml(patient.phone || "")}" style="${fieldStyle()}" placeholder="رقم الهاتف"></div>
+          <div style="margin-bottom:18px"><label style="${labelStyle()}">رقم WhatsApp</label><input id="contactWhatsappPhone" required inputmode="tel" value="${escapeHtml(patient.whatsapp_phone || "")}" style="${fieldStyle()}" placeholder="رقم WhatsApp"></div>
+          <button type="submit" style="${primaryButtonStyle()}">حفظ أرقام التواصل</button>
+        </form>
+      `);
+      $("#patientContactForm", modal)?.addEventListener("submit", async (event) => {
+        event.preventDefault(); const button = event.submitter;
+        if (button) { button.disabled = true; button.textContent = "جارٍ الحفظ..."; }
+        try {
+          const saved = await api("/patient/contact", {method:"PATCH",body:JSON.stringify({phone:$("#contactPhone",modal).value.trim(),whatsapp_phone:$("#contactWhatsappPhone",modal).value.trim()})});
+          notify(saved.message || "تم حفظ أرقام التواصل.", "success"); modal.remove();
+        } catch (error) { notify(error.message, "error"); if (button) { button.disabled = false; button.textContent = "حفظ أرقام التواصل"; } }
+      });
+    } catch (error) { notify(error.message || "تعذر تحميل بيانات التواصل.", "error"); }
   }
 
   /* =========================================================
