@@ -48,3 +48,6 @@ jobs:
             console.log(`Syntax OK: ${htmlFile} (${scripts.length} inline script(s))`);
           }
           NODE
+
+      - name: Run source-level portal security checks
+        run: node --test tests/doctor-portal-security.test.js
