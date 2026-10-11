@@ -378,6 +378,8 @@ async function initDatabase() {
       channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp')),
       recipient_role TEXT NOT NULL CHECK (recipient_role IN ('patient','doctor','secretary')),
       recipient_phone TEXT NOT NULL,
+      provider_message_id TEXT,
+      locked_at TIMESTAMPTZ,
       scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','failed','cancelled')),
       attempts INTEGER NOT NULL DEFAULT 0,
@@ -572,6 +574,9 @@ async function initDatabase() {
     ["ads", "ends_at", "TIMESTAMPTZ"],
     ["ads", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
     ["ads", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
+
+    ["notification_outbox", "provider_message_id", "TEXT"],
+    ["notification_outbox", "locked_at", "TIMESTAMPTZ"],
 
     ["sessions", "access_token_hash", "TEXT"],
     ["sessions", "refresh_token_hash", "TEXT"],
