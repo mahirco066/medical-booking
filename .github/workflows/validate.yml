@@ -1,0 +1,25 @@
+name: Validate JavaScript
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/contact-numbers-notifications]
+
+jobs:
+  syntax:
+    name: JavaScript syntax checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check server syntax
+        run: node --check server.js
+      - name: Check notification worker syntax
+        run: node --check notification-worker.js
+      - name: Check browser application syntax
+        run: node --check public/app.js
