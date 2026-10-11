@@ -271,6 +271,10 @@ async function login(event){
     if(data.refresh_token) localStorage.setItem(REFRESH_KEY,data.refresh_token);
     if(data.user) localStorage.setItem(USER_KEY,JSON.stringify(data.user));
     const user=data.user||{};
+    if(user.role==="doctor" || user.role==="secretary"){
+      window.location.href="/doctor.html";
+      return;
+    }
     if(user.role && user.role!=="admin") throw new Error("هذا الحساب ليس حساب مدير.");
     showDashboard();
     await initializeDashboard();
@@ -708,8 +712,26 @@ function renderDoctors(){
     const name=doctor.full_name||"بدون اسم";
     const initials=name.split(/\s+/).filter(Boolean).slice(0,2).map(word=>word.charAt(0)).join("")||"ط";
     const image=doctor.image_url||"";
-    return `<tr><td><div class="doctor-cell">${image?`<img class="doctor-avatar" src="${escapeHtml(image)}" alt="${escapeHtml(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="doctor-avatar-placeholder" style="display:none">${escapeHtml(initials)}</div>`:`<div class="doctor-avatar-placeholder">${escapeHtml(initials)}</div>`}<div><div class="doctor-name">${escapeHtml(name)}</div></div></div></td><td>${escapeHtml(doctor.specialty||"—")}</td><td>${escapeHtml(doctor.area||"—")}</td><td>${escapeHtml(doctor.phone||"—")}</td><td>${active?`<span class="badge badge-green">نشط</span>`:`<span class="badge badge-red">معطل</span>`}</td><td><button class="action-btn schedule-btn" onclick="openScheduleModal('${escapeHtml(doctor.id)}')">🕐 مواعيدي</button><button class="action-btn edit-btn" onclick="editDoctor('${escapeHtml(doctor.id)}')">تعديل</button>${active?`<button class="action-btn disable-btn" onclick="toggleDoctor('${escapeHtml(doctor.id)}',false)">تعطيل</button>`:`<button class="action-btn enable-btn" onclick="toggleDoctor('${escapeHtml(doctor.id)}',true)">تفعيل</button>`}</td></tr>`;
+    return `<tr><td><div class="doctor-cell">${image?`<img class="doctor-avatar" src="${escapeHtml(image)}" alt="${escapeHtml(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="doctor-avatar-placeholder" style="display:none">${escapeHtml(initials)}</div>`:`<div class="doctor-avatar-placeholder">${escapeHtml(initials)}</div>`}<div><div class="doctor-name">${escapeHtml(name)}</div><div style="font-size:11px;color:#64748b;margin-top:3px">${doctor.has_account?`حساب: ${escapeHtml(doctor.account_username||"مفعل")}`:"لا يوجد حساب دخول"}</div></div></div></td><td>${escapeHtml(doctor.specialty||"—")}</td><td>${escapeHtml(doctor.area||"—")}</td><td>${escapeHtml(doctor.phone||"—")}</td><td>${active?`<span class="badge badge-green">نشط</span>`:`<span class="badge badge-red">معطل</span>`}</td><td><button class="action-btn schedule-btn" onclick="openScheduleModal('${escapeHtml(doctor.id)}')">🕐 مواعيدي</button><button class="action-btn edit-btn" onclick="editDoctor('${escapeHtml(doctor.id)}')">تعديل</button><button class="action-btn" style="background:#ede9fe;color:#6d28d9" onclick="setupDoctorAccount('${escapeHtml(doctor.id)}')">🔐 حساب الطبيب</button>${active?`<button class="action-btn disable-btn" onclick="toggleDoctor('${escapeHtml(doctor.id)}',false)">تعطيل</button>`:`<button class="action-btn enable-btn" onclick="toggleDoctor('${escapeHtml(doctor.id)}',true)">تفعيل</button>`}</td></tr>`;
   }).join("");
+}
+
+async function setupDoctorAccount(id){
+  const doctor=doctors.find(x=>String(x.id)===String(id));
+  if(!doctor)return showToast("لم يتم العثور على الطبيب.","error");
+  const username=prompt("أدخل اسم المستخدم لحساب الطبيب:",doctor.account_username||"");
+  if(username===null)return;
+  const password=prompt("أدخل كلمة مرور جديدة (8 أحرف على الأقل):");
+  if(password===null)return;
+  if(!username.trim()||password.length<8)return showToast("اسم المستخدم مطلوب وكلمة المرور 8 أحرف على الأقل.","error");
+  try{
+    const result=await api("/admin/doctors/"+encodeURIComponent(id)+"/account",{
+      method:"POST",
+      body:JSON.stringify({username:username.trim(),password,full_name:doctor.full_name})
+    });
+    showToast(result.message||"تم حفظ حساب الطبيب.");
+    await loadDoctors();
+  }catch(error){showToast(error.message||"تعذر إنشاء حساب الطبيب.","error")}
 }
 
 function clearImagePreview(){
