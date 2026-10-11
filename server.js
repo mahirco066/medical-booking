@@ -190,6 +190,29 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // A cancellation invalidates every unsent reminder. A reschedule invalidates
+    // reminders for the old date/time; the replacement reminder is added below.
+    if (eventType === "cancelled") {
+      await client.query(
+        `UPDATE notification_outbox
+            SET status='cancelled',updated_at=NOW()
+          WHERE appointment_id=$1 AND event_type='reminder_24h'
+            AND status IN ('pending','failed')`,
+        [a.id]
+      );
+    } else if (eventType === "rescheduled") {
+      await client.query(
+        `UPDATE notification_outbox
+            SET status='cancelled',updated_at=NOW()
+          WHERE appointment_id=$1 AND event_type='reminder_24h'
+            AND status IN ('pending','failed')
+            AND (payload->>'appointment_date' IS DISTINCT FROM $2
+              OR payload->>'appointment_time' IS DISTINCT FROM $3)`,
+        [a.id, dateText, timeText]
+      );
+    }
+
     for (const contact of contacts) {
       for (const channel of ["sms", "whatsapp"]) {
         const phone = channel === "sms" ? contact.sms : contact.whatsapp;
@@ -206,9 +229,10 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
     }
 
     if (["booked", "confirmed", "rescheduled"].includes(eventType) && ["pending", "confirmed"].includes(a.status)) {
-      // Date/time are interpreted as the clinic's local timezone by the delivery worker.
-      const reminderAt = new Date(`${dateText}T${timeText}:00`);
-      reminderAt.setHours(reminderAt.getHours() - 24);
+      // Sudan local time (Africa/Khartoum, UTC+2): store reminder due time as UTC.
+      const [year, month, day] = dateText.split("-").map(Number);
+      const [hour, minute] = timeText.split(":").map(Number);
+      const reminderAt = new Date(Date.UTC(year, month - 1, day, hour - 2, minute) - 24 * 60 * 60 * 1000);
       if (reminderAt.getTime() > Date.now()) {
         for (const contact of contacts) {
           for (const channel of ["sms", "whatsapp"]) {
@@ -2450,7 +2474,9 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
       [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
     );
     if(!r.rowCount)return jsonError(res,409,"تعذر تحديث الموعد؛ ربما تغيرت حالته.");
-    await enqueueAppointmentNotifications(r.rows[0].id, status === "cancelled" ? "cancelled" : status === "confirmed" ? "confirmed" : "booked");
+    if (status === "cancelled" || status === "confirmed") {
+      await enqueueAppointmentNotifications(r.rows[0].id, status);
+    }
     return jsonOk(res,{message:"تم تحديث حالة الموعد.",appointment:r.rows[0]});
   }catch(e){console.error("Doctor appointment status error:",e);return jsonError(res,500,"تعذر تحديث حالة الموعد.");}
 });
