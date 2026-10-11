@@ -88,7 +88,7 @@ async function main() {
 
   const listA = await request("/api/doctor/appointments", { token: doctorAUser.token });
   expectStatus(listA, 200, "Doctor A appointments list");
-  assert.deepEqual(listA.data.appointments.map(a => a.id), [appointmentAId], "Doctor A must only see their own appointment");
+  assert.deepEqual(listA.data.appointments.map(a => a.id).sort(), [appointmentAId, appointmentConflictId].sort(), "Doctor A must only see their own appointments");
 
   const listB = await request("/api/doctor/appointments", { token: doctorBUser.token });
   expectStatus(listB, 200, "Doctor B appointments list");
@@ -96,7 +96,7 @@ async function main() {
 
   const listSecretary = await request("/api/doctor/appointments", { token: secretary.token });
   expectStatus(listSecretary, 200, "Secretary appointments list");
-  assert.deepEqual(listSecretary.data.appointments.map(a => a.id), [appointmentAId], "Secretary must only see their doctor's appointments");
+  assert.deepEqual(listSecretary.data.appointments.map(a => a.id).sort(), [appointmentAId, appointmentConflictId].sort(), "Secretary must only see their doctor's appointments");
 
   const crossDoctorEdit = await request(`/api/doctor/appointments/${appointmentBId}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
