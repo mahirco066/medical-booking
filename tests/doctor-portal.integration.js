@@ -237,6 +237,13 @@ async function main() {
     }
   });
   expectStatus(patientAResult, 200, "Register patient A for concurrency test");
+  const patientALogin = await request("/api/login", {
+    method: "POST",
+    body: { username: patientAUsername, password: "RacePatientPass123" }
+  });
+  expectStatus(patientALogin, 200, "Newly registered patient can log in using the stored password salt");
+  assert.ok(patientALogin.data.token, "Patient login should return an access token");
+
   const patientBResult = await request("/api/patient/register", {
     method: "POST",
     body: {
@@ -251,7 +258,7 @@ async function main() {
 
   const concurrentBookings = await Promise.all([
     request("/api/appointments", {
-      token: patientAResult.data.token,
+      token: patientALogin.data.token,
       method: "POST",
       body: { service_id: serviceId, doctor_id: doctorA.id, appointment_date: date, appointment_time: "11:00" }
     }),
