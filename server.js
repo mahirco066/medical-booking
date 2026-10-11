@@ -150,7 +150,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
   const appointment = await pool.query(
     `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,
             COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
-            a.appointment_date,a.appointment_time,a.status,a.updated_at,
+            a.appointment_date::text AS appointment_date,a.appointment_time,a.status,a.updated_at,
             COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS patient_whatsapp,
             d.full_name AS doctor_name,
             d.phone AS doctor_phone,
