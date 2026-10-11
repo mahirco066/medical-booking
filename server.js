@@ -1139,7 +1139,7 @@ function minutesToTime(minutes) {
 
 async function getDoctorSchedules(doctorId, dayOfWeek) {
   const params = [doctorId];
-  let sql = "SELECT id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active,created_at,updated_at FROM doctor_schedules WHERE doctor_id=$1";
+  let sql = "SELECT id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active,created_at,updated_at FROM doctor_schedules WHERE doctor_id=$1 AND active=TRUE";
 
   if (dayOfWeek !== undefined && dayOfWeek !== null) {
     sql += " AND day_of_week=$2";
@@ -1152,10 +1152,10 @@ async function getDoctorSchedules(doctorId, dayOfWeek) {
   return result.rows;
 }
 
-async function getBookedTimes(doctorId, dateString) {
+async function getBookedTimes(doctorId, dateString, excludeAppointmentId = null) {
   const result = await pool.query(
-    "SELECT appointment_time FROM appointments WHERE doctor_id=$1 AND appointment_date=$2 AND status IN ('pending','confirmed')",
-    [doctorId, dateString]
+    "SELECT appointment_time FROM appointments WHERE doctor_id=$1 AND appointment_date=$2 AND status IN ('pending','confirmed') AND ($3::uuid IS NULL OR id<>$3::uuid)",
+    [doctorId, dateString, excludeAppointmentId]
   );
 
   return result.rows.map(r => String(r.appointment_time).slice(0, 5));
@@ -1194,7 +1194,7 @@ function generateAvailableSlots(schedules, bookedTimes) {
   return slots;
 }
 
-async function isAppointmentTimeAvailable(doctorId, dateString, timeString) {
+async function isAppointmentTimeAvailable(doctorId, dateString, timeString, excludeAppointmentId = null) {
   const day = getDayOfWeek(dateString);
   const schedules = await getDoctorSchedules(doctorId, day);
 
@@ -1226,7 +1226,7 @@ async function isAppointmentTimeAvailable(doctorId, dateString, timeString) {
     };
   }
 
-  const booked = await getBookedTimes(doctorId, dateString);
+  const booked = await getBookedTimes(doctorId, dateString, excludeAppointmentId);
 
   if (booked.includes(String(timeString).slice(0, 5))) {
     return {
@@ -1283,6 +1283,11 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
 
     if (!doctor.rowCount) {
       return jsonError(res, 404, "الطبيب غير موجود أو غير متاح.");
+    }
+
+    const availability = await isAppointmentTimeAvailable(doctorId, appointmentDate, appointmentTime);
+    if (!availability.available) {
+      return jsonError(res, 409, availability.reason);
     }
 
     const doctorConflict = await pool.query(
@@ -2262,10 +2267,36 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
     const date=clean(req.body.appointment_date||""), time=clean(req.body.appointment_time||"");
     if(!validDate(date))return jsonError(res,400,"تاريخ الموعد غير صحيح.");
     if(!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time))return jsonError(res,400,"وقت الموعد غير صحيح.");
-    const r=await pool.query("UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 RETURNING *",[date,time,req.params.id,req.authUser.doctor_id]);
-    if(!r.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+
+    const current=await pool.query(
+      "SELECT id,patient_id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      [req.params.id,req.authUser.doctor_id]
+    );
+    if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+    if(!["pending","confirmed"].includes(current.rows[0].status)) {
+      return jsonError(res,409,"لا يمكن تعديل موعد غير نشط.");
+    }
+
+    const availability=await isAppointmentTimeAvailable(
+      req.authUser.doctor_id,date,time,req.params.id
+    );
+    if(!availability.available)return jsonError(res,409,availability.reason);
+
+    if(current.rows[0].patient_id) {
+      const patientConflict=await pool.query(
+        "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+        [current.rows[0].patient_id,date,time,req.params.id]
+      );
+      if(patientConflict.rowCount)return jsonError(res,409,"لدى المريض موعد آخر في التاريخ والوقت المحددين.");
+    }
+
+    const r=await pool.query(
+      "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+      [date,time,req.params.id,req.authUser.doctor_id]
+    );
+    if(!r.rowCount)return jsonError(res,409,"تعذر تعديل الموعد؛ ربما تغيرت حالته.");
     return jsonOk(res,{message:"تم تعديل تاريخ ووقت الموعد.",appointment:r.rows[0]});
-  }catch(e){console.error("Doctor appointment edit error:",e);return jsonError(res,500,"تعذر تعديل الموعد.");}
+  }catch(e){console.error("Doctor appointment edit error:",e);return jsonError(res,500,"تعذر تعديل تاريخ ووقت الموعد.");}
 });
 
 app.get("/api/doctor/schedules", requireDoctor, async (req,res)=>{
