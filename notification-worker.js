@@ -1,10 +1,14 @@
 "use strict";
 
 const { Pool } = require("pg");
-const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM"];
+const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM", "NOTIFICATION_SEND_ENABLED"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
   console.error("Notification worker not started. Missing environment variables: " + missing.join(", "));
+  process.exit(1);
+}
+if (String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
+  console.error("Notification worker not started. Set NOTIFICATION_SEND_ENABLED=true only after completing a controlled test.");
   process.exit(1);
 }
 
