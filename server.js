@@ -196,21 +196,22 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
   try {
     await client.query("BEGIN");
 
-    // A cancellation invalidates every unsent reminder. A reschedule invalidates
-    // reminders for the old date/time; the replacement reminder is added below.
+    // Do not deliver stale queued messages after a cancellation or time change.
+    // Keep already-sent rows as an audit trail and preserve the new event below.
     if (eventType === "cancelled") {
       await client.query(
         `UPDATE notification_outbox
-            SET status='cancelled',updated_at=NOW()
-          WHERE appointment_id=$1 AND event_type='reminder_24h'
+            SET status='cancelled',locked_at=NULL,updated_at=NOW()
+          WHERE appointment_id=$1 AND event_type <> 'cancelled'
             AND status IN ('pending','failed')`,
         [a.id]
       );
     } else if (eventType === "rescheduled") {
       await client.query(
         `UPDATE notification_outbox
-            SET status='cancelled',updated_at=NOW()
-          WHERE appointment_id=$1 AND event_type='reminder_24h'
+            SET status='cancelled',locked_at=NULL,updated_at=NOW()
+          WHERE appointment_id=$1
+            AND event_type IN ('booked','confirmed','rescheduled','reminder_24h')
             AND status IN ('pending','failed')
             AND (payload->>'appointment_date' IS DISTINCT FROM $2
               OR payload->>'appointment_time' IS DISTINCT FROM $3)`,
