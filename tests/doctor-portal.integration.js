@@ -136,16 +136,6 @@ async function main() {
   });
   expectStatus(secretaryCannotMarkCompleted, 403, "Secretary cannot mark an appointment completed");
 
-  const secretaryCancelsOwnAppointment = await request(`/api/doctor/appointments/${appointmentConflictId}/status`, {
-    token: secretary.token, method: "PATCH", body: { status: "cancelled", cancellation_reason: "Test cancellation" }
-  });
-  expectStatus(secretaryCancelsOwnAppointment, 200, "Secretary can cancel an appointment for their own doctor");
-
-  const cannotReopenCancelledAppointment = await request(`/api/doctor/appointments/${appointmentConflictId}/status`, {
-    token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
-  });
-  expectStatus(cannotReopenCancelledAppointment, 409, "Cancelled appointments cannot be reopened through status update");
-
   const crossDoctorEdit = await request(`/api/doctor/appointments/${appointmentBId}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
   });
@@ -215,6 +205,16 @@ async function main() {
     body: { appointment_date: date, appointment_time: "10:00" }
   });
   expectStatus(occupiedSlot, 409, "Appointment cannot be moved to another booked slot");
+
+  const secretaryCancelsOwnAppointment = await request(`/api/doctor/appointments/${appointmentConflictId}/status`, {
+    token: secretary.token, method: "PATCH", body: { status: "cancelled", cancellation_reason: "Test cancellation" }
+  });
+  expectStatus(secretaryCancelsOwnAppointment, 200, "Secretary can cancel an appointment for their own doctor");
+
+  const cannotReopenCancelledAppointment = await request(`/api/doctor/appointments/${appointmentConflictId}/status`, {
+    token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
+  });
+  expectStatus(cannotReopenCancelledAppointment, 409, "Cancelled appointments cannot be reopened through status update");
 
   const validReschedule = await request(`/api/doctor/appointments/${appointmentAId}`, {
     token: doctorAUser.token, method: "PATCH",
