@@ -1,6 +1,7 @@
 "use strict";
 
 const { Pool } = require("pg");
+const { isNotificationRelevant } = require("./notification-utils");
 const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM", "NOTIFICATION_SEND_ENABLED"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
@@ -132,17 +133,14 @@ async function isNotificationStillRelevant(row) {
   );
   if (!result.rowCount) return false;
   const appointment = result.rows[0];
-  const status = appointment.status;
-  const sameSlot =
-    String(row.payload.appointment_date || "").slice(0, 10) === String(appointment.appointment_date || "").slice(0, 10) &&
-    String(row.payload.appointment_time || "").slice(0, 5) === String(appointment.appointment_time || "").slice(0, 5);
-
-  if (row.event_type === "cancelled") return status === "cancelled";
-  if (row.event_type === "booked") return status === "pending" && sameSlot;
-  if (row.event_type === "confirmed") return status === "confirmed" && sameSlot;
-  if (row.event_type === "rescheduled") return ["pending", "confirmed"].includes(status) && sameSlot;
-  if (row.event_type === "reminder_24h") return ["pending", "confirmed"].includes(status) && sameSlot;
-  return false;
+  return isNotificationRelevant(
+    row.event_type,
+    appointment.status,
+    row.payload.appointment_date,
+    row.payload.appointment_time,
+    appointment.appointment_date,
+    appointment.appointment_time
+  );
 }
 
 async function processOne() {
