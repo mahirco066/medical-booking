@@ -142,6 +142,100 @@ async function addColumnIfMissing(table, column, definition) {
    DATABASE INITIALIZATION
 ========================================================= */
 
+async function enqueueAppointmentNotifications(appointmentId, eventType) {
+  const allowed = new Set(["booked", "confirmed", "cancelled", "rescheduled"]);
+  if (!allowed.has(eventType)) throw new Error("Unsupported notification event");
+
+  const appointment = await pool.query(
+    `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,a.patient_phone,
+            a.appointment_date,a.appointment_time,a.status,
+            p.whatsapp_phone AS patient_whatsapp,
+            d.full_name AS doctor_name,
+            d.phone AS doctor_phone,
+            du.whatsapp_phone AS doctor_whatsapp
+       FROM appointments a
+       LEFT JOIN patients p ON p.id=a.patient_id
+       LEFT JOIN doctors d ON d.id=a.doctor_id
+       LEFT JOIN users du ON du.id=d.user_id
+      WHERE a.id=$1 LIMIT 1`,
+    [appointmentId]
+  );
+  if (!appointment.rowCount) return;
+  const a = appointment.rows[0];
+
+  const contacts = [
+    { role: "patient", sms: a.patient_phone, whatsapp: a.patient_whatsapp },
+    { role: "doctor", sms: a.doctor_phone, whatsapp: a.doctor_whatsapp }
+  ];
+  const secretaries = await pool.query(
+    `SELECT phone,whatsapp_phone FROM staff_users
+      WHERE doctor_id=$1 AND role='secretary' AND active=TRUE`,
+    [a.doctor_id]
+  );
+  for (const secretary of secretaries.rows) {
+    contacts.push({ role: "secretary", sms: secretary.phone, whatsapp: secretary.whatsapp_phone });
+  }
+
+  const dateText = String(a.appointment_date).slice(0, 10);
+  const timeText = String(a.appointment_time).slice(0, 5);
+  const payload = {
+    appointment_id: a.id,
+    event_type: eventType,
+    patient_name: a.patient_name,
+    doctor_name: a.doctor_name,
+    appointment_date: dateText,
+    appointment_time: timeText,
+    appointment_status: a.status
+  };
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const contact of contacts) {
+      for (const channel of ["sms", "whatsapp"]) {
+        const phone = channel === "sms" ? contact.sms : contact.whatsapp;
+        if (!phone || !String(phone).trim()) continue;
+        const key = `appointment:${a.id}:${eventType}:${contact.role}:${channel}:${dateText}:${timeText}`;
+        await client.query(
+          `INSERT INTO notification_outbox
+             (id,appointment_id,event_type,channel,recipient_role,scheduled_at,idempotency_key,payload)
+           VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7::jsonb)
+           ON CONFLICT (idempotency_key) DO NOTHING`,
+          [makeId(), a.id, eventType, channel, contact.role, key, JSON.stringify(payload)]
+        );
+      }
+    }
+
+    if (["booked", "confirmed", "rescheduled"].includes(eventType) && ["pending", "confirmed"].includes(a.status)) {
+      // Date/time are interpreted as the clinic's local timezone by the delivery worker.
+      const reminderAt = new Date(`${dateText}T${timeText}:00`);
+      reminderAt.setHours(reminderAt.getHours() - 24);
+      if (reminderAt.getTime() > Date.now()) {
+        for (const contact of contacts) {
+          for (const channel of ["sms", "whatsapp"]) {
+            const phone = channel === "sms" ? contact.sms : contact.whatsapp;
+            if (!phone || !String(phone).trim()) continue;
+            const key = `appointment:${a.id}:reminder_24h:${contact.role}:${channel}:${dateText}:${timeText}`;
+            await client.query(
+              `INSERT INTO notification_outbox
+                 (id,appointment_id,event_type,channel,recipient_role,scheduled_at,idempotency_key,payload)
+               VALUES ($1,$2,'reminder_24h',$3,$4,$5,$6,$7::jsonb)
+               ON CONFLICT (idempotency_key) DO NOTHING`,
+              [makeId(), a.id, channel, contact.role, reminderAt.toISOString(), key,
+                JSON.stringify({ ...payload, event_type: "reminder_24h" })]
+            );
+          }
+        }
+      }
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function initDatabase() {
   console.log("Initializing Neon database...");
 
@@ -223,6 +317,31 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_outbox (
+      id UUID PRIMARY KEY,
+      appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL CHECK (event_type IN ('booked','confirmed','cancelled','rescheduled','reminder_24h')),
+      channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp')),
+      recipient_role TEXT NOT NULL CHECK (recipient_role IN ('patient','doctor','secretary')),
+      scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','failed','cancelled')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      last_error TEXT,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_notification_outbox_due
+    ON notification_outbox (scheduled_at, status)
+    WHERE status IN ('pending','failed')
   `);
 
   await pool.query(`
@@ -1366,6 +1485,7 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
       ]
     );
 
+    await enqueueAppointmentNotifications(result.rows[0].id, "booked");
     return jsonOk(res, {
       message: "تم إرسال طلب الحجز بنجاح.",
       appointment: result.rows[0]
@@ -1444,6 +1564,7 @@ app.patch("/api/appointments/:id/confirm", requireAuth, async (req, res) => {
       );
     }
 
+    await enqueueAppointmentNotifications(result.rows[0].id, "confirmed");
     return jsonOk(res, {
       message: "تم تأكيد الموعد بنجاح.",
       appointment: result.rows[0]
@@ -1484,6 +1605,7 @@ app.patch("/api/appointments/:id/cancel", requireAuth, async (req, res) => {
       );
     }
 
+    await enqueueAppointmentNotifications(result.rows[0].id, "cancelled");
     return jsonOk(res, {
       message: "تم إلغاء الحجز بنجاح.",
       appointment: result.rows[0]
@@ -1530,6 +1652,7 @@ app.patch("/api/my-appointments/:id/cancel", requireAuth, async (req, res) => {
       return jsonError(res, 404, "الموعد غير موجود أو لا يمكن إلغاؤه.");
     }
 
+    await enqueueAppointmentNotifications(result.rows[0].id, "cancelled");
     return jsonOk(res, {
       message: "تم إلغاء الموعد.",
       appointment: result.rows[0]
@@ -2327,6 +2450,7 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
       [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
     );
     if(!r.rowCount)return jsonError(res,409,"تعذر تحديث الموعد؛ ربما تغيرت حالته.");
+    await enqueueAppointmentNotifications(r.rows[0].id, status === "cancelled" ? "cancelled" : status === "confirmed" ? "confirmed" : "booked");
     return jsonOk(res,{message:"تم تحديث حالة الموعد.",appointment:r.rows[0]});
   }catch(e){console.error("Doctor appointment status error:",e);return jsonError(res,500,"تعذر تحديث حالة الموعد.");}
 });
@@ -2364,6 +2488,7 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
       [date,time,req.params.id,req.authUser.doctor_id]
     );
     if(!r.rowCount)return jsonError(res,409,"تعذر تعديل الموعد؛ ربما تغيرت حالته.");
+    await enqueueAppointmentNotifications(r.rows[0].id, "rescheduled");
     return jsonOk(res,{message:"تم تعديل تاريخ ووقت الموعد.",appointment:r.rows[0]});
   }catch(e){console.error("Doctor appointment edit error:",e);return jsonError(res,500,"تعذر تعديل تاريخ ووقت الموعد.");}
 });
