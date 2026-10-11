@@ -1744,7 +1744,6 @@ app.patch("/api/my-appointments/:id/cancel", requireAuth, async (req, res) => {
       return jsonError(res, 404, "الموعد غير موجود أو لا يمكن إلغاؤه.");
     }
 
-    await enqueueAppointmentNotifications(result.rows[0].id, "cancelled");
     return jsonOk(res, {
       message: "تم إلغاء الموعد.",
       appointment: result.rows[0]
