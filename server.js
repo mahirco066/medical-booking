@@ -222,13 +222,14 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
       for (const channel of ["sms", "whatsapp"]) {
         const phone = channel === "sms" ? contact.sms : contact.whatsapp;
         if (!phone || !String(phone).trim()) continue;
-        const key = `appointment:${a.id}:${eventType}:${contact.role}:${channel}:${dateText}:${timeText}`;
+        const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
+        const key = `appointment:${a.id}:${eventType}:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}`;
         await client.query(
           `INSERT INTO notification_outbox
-             (id,appointment_id,event_type,channel,recipient_role,scheduled_at,idempotency_key,payload)
-           VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7::jsonb)
+             (id,appointment_id,event_type,channel,recipient_role,recipient_phone,scheduled_at,idempotency_key,payload)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8::jsonb)
            ON CONFLICT (idempotency_key) DO NOTHING`,
-          [makeId(), a.id, eventType, channel, contact.role, key, JSON.stringify(payload)]
+          [makeId(), a.id, eventType, channel, contact.role, String(phone).trim(), key, JSON.stringify(payload)]
         );
       }
     }
@@ -243,13 +244,14 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
           for (const channel of ["sms", "whatsapp"]) {
             const phone = channel === "sms" ? contact.sms : contact.whatsapp;
             if (!phone || !String(phone).trim()) continue;
-            const key = `appointment:${a.id}:reminder_24h:${contact.role}:${channel}:${dateText}:${timeText}`;
+            const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
+            const key = `appointment:${a.id}:reminder_24h:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}`;
             await client.query(
               `INSERT INTO notification_outbox
-                 (id,appointment_id,event_type,channel,recipient_role,scheduled_at,idempotency_key,payload)
-               VALUES ($1,$2,'reminder_24h',$3,$4,$5,$6,$7::jsonb)
+                 (id,appointment_id,event_type,channel,recipient_role,recipient_phone,scheduled_at,idempotency_key,payload)
+               VALUES ($1,$2,'reminder_24h',$3,$4,$5,$6,$7,$8::jsonb)
                ON CONFLICT (idempotency_key) DO NOTHING`,
-              [makeId(), a.id, channel, contact.role, reminderAt.toISOString(), key,
+              [makeId(), a.id, channel, contact.role, String(phone).trim(), reminderAt.toISOString(), key,
                 JSON.stringify({ ...payload, event_type: "reminder_24h" })]
             );
           }
@@ -355,6 +357,7 @@ async function initDatabase() {
       event_type TEXT NOT NULL CHECK (event_type IN ('booked','confirmed','cancelled','rescheduled','reminder_24h')),
       channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp')),
       recipient_role TEXT NOT NULL CHECK (recipient_role IN ('patient','doctor','secretary')),
+      recipient_phone TEXT NOT NULL,
       scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','failed','cancelled')),
       attempts INTEGER NOT NULL DEFAULT 0,
