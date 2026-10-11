@@ -310,6 +310,34 @@ async function main() {
     [doctorA.id, date, "11:00"]
   );
   assert.equal(raceSlotRows.rows[0].count, 1, "Concurrent requests must not create duplicate active appointments for the same doctor slot");
+  const winningAppointment = await pool.query(
+    "SELECT id,patient_id FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND status='pending' LIMIT 1",
+    [doctorA.id, date, "11:00"]
+  );
+  assert.equal(winningAppointment.rowCount, 1, "The winning booking should be persisted for notification checks");
+  const queuedNotifications = await pool.query(
+    "SELECT event_type,channel,recipient_role,status,scheduled_at,payload FROM notification_outbox WHERE appointment_id=$1",
+    [winningAppointment.rows[0].id]
+  );
+  const patientBookedSms = queuedNotifications.rows.find(row =>
+    row.event_type === "booked" && row.channel === "sms" && row.recipient_role === "patient"
+  );
+  const patientBookedWhatsApp = queuedNotifications.rows.find(row =>
+    row.event_type === "booked" && row.channel === "whatsapp" && row.recipient_role === "patient"
+  );
+  assert.ok(patientBookedSms, "Booking should queue an SMS notification for the patient");
+  assert.ok(patientBookedWhatsApp, "Booking should queue a WhatsApp notification for the patient");
+  assert.equal(patientBookedSms.status, "pending", "New booking SMS should remain queued until a worker sends it");
+  const patientReminderSms = queuedNotifications.rows.find(row =>
+    row.event_type === "reminder_24h" && row.channel === "sms" && row.recipient_role === "patient"
+  );
+  const patientReminderWhatsApp = queuedNotifications.rows.find(row =>
+    row.event_type === "reminder_24h" && row.channel === "whatsapp" && row.recipient_role === "patient"
+  );
+  assert.ok(patientReminderSms, "Future booking should queue a 24-hour SMS reminder");
+  assert.ok(patientReminderWhatsApp, "Future booking should queue a 24-hour WhatsApp reminder");
+  assert.ok(new Date(patientReminderSms.scheduled_at).getTime() > Date.now(), "24-hour reminder should be scheduled in the future");
+  assert.equal(patientReminderSms.payload.appointment_date, date, "Reminder payload should preserve the appointment date");
 
   const disableSchedule = await request(`/api/doctor/schedules/${scheduleForDate.data.schedule.id}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { active: false }
