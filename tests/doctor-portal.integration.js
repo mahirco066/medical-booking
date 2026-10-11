@@ -111,11 +111,37 @@ async function main() {
   const secretarySchedules = await request("/api/doctor/schedules", { token: secretary.token });
   expectStatus(secretarySchedules, 403, "Secretary cannot manage doctor's schedule");
 
+  const fakeScheduleId = crypto.randomUUID();
+  const secretaryCreatesSchedule = await request("/api/doctor/schedules", {
+    token: secretary.token, method: "POST",
+    body: { day_of_week: 3, start_time: "13:00", end_time: "15:00", slot_duration_minutes: 30 }
+  });
+  expectStatus(secretaryCreatesSchedule, 403, "Secretary cannot create doctor's schedule");
+
+  const secretaryUpdatesSchedule = await request(`/api/doctor/schedules/${fakeScheduleId}`, {
+    token: secretary.token, method: "PUT",
+    body: { day_of_week: 3, start_time: "13:00", end_time: "15:00", slot_duration_minutes: 30 }
+  });
+  expectStatus(secretaryUpdatesSchedule, 403, "Secretary cannot update doctor's schedule");
+
+  const secretaryTogglesSchedule = await request(`/api/doctor/schedules/${fakeScheduleId}/status`, {
+    token: secretary.token, method: "PATCH", body: { active: false }
+  });
+  expectStatus(secretaryTogglesSchedule, 403, "Secretary cannot enable or disable doctor's schedule");
+
+  const secretaryListsSecretaries = await request("/api/doctor/secretaries", { token: secretary.token });
+  expectStatus(secretaryListsSecretaries, 403, "Secretary cannot manage secretary accounts");
+
   const secretaryCreatesSecretary = await request("/api/doctor/secretaries", {
     token: secretary.token, method: "POST",
     body: { full_name: "Forbidden Secretary", username: `forbidden_${suffix}`, password: "ForbiddenPass123" }
   });
   expectStatus(secretaryCreatesSecretary, 403, "Secretary cannot create another secretary");
+
+  const secretaryDisablesSecretary = await request(`/api/doctor/secretaries/${fakeScheduleId}/status`, {
+    token: secretary.token, method: "PATCH", body: { active: false }
+  });
+  expectStatus(secretaryDisablesSecretary, 403, "Secretary cannot enable or disable secretary accounts");
 
   const scheduleCreated = await request("/api/doctor/schedules", {
     token: doctorAUser.token, method: "POST",
