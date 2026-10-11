@@ -1,0 +1,50 @@
+name: Doctor portal syntax checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/doctor-secretary-portal]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check server JavaScript syntax
+        run: node --check server.js
+      - name: Check inline JavaScript in portal HTML files
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const { execFileSync } = require('node:child_process');
+
+          for (const htmlFile of ['public/dashboard.html', 'public/doctor.html']) {
+            if (!fs.existsSync(htmlFile)) {
+              if (htmlFile === 'public/doctor.html') {
+                throw new Error(`Required portal file is missing: ${htmlFile}`);
+              }
+              continue;
+            }
+
+            const html = fs.readFileSync(htmlFile, 'utf8');
+            const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)]
+              .filter(match => !/\bsrc\s*=/.test(match[1]))
+              .map(match => match[2])
+              .filter(source => source.trim());
+
+            scripts.forEach((source, index) => {
+              const file = path.join(os.tmpdir(), `portal-script-${path.basename(htmlFile)}-${index}.js`);
+              fs.writeFileSync(file, source);
+              execFileSync(process.execPath, ['--check', file], { stdio: 'inherit' });
+            });
+            console.log(`Syntax OK: ${htmlFile} (${scripts.length} inline script(s))`);
+          }
+          NODE
