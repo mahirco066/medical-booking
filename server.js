@@ -576,7 +576,7 @@ async function getAuthUser(req) {
   if (!token) return null;
 
   const result = await pool.query(
-    "SELECT s.id AS session_id,s.expires_at,s.staff_user_id,s.user_id,su.username AS staff_username,su.full_name AS staff_full_name,su.role AS staff_role,su.doctor_id AS staff_doctor_id,su.active AS staff_active,u.username AS user_username,u.full_name AS user_full_name,u.phone AS user_phone,u.email AS user_email,u.role AS user_role,u.active AS user_active FROM sessions s LEFT JOIN staff_users su ON su.id=s.staff_user_id LEFT JOIN users u ON u.id=s.user_id WHERE s.access_token_hash=$1 AND s.expires_at>NOW() LIMIT 1",
+    "SELECT s.id AS session_id,s.expires_at,s.staff_user_id,s.user_id,su.username AS staff_username,su.full_name AS staff_full_name,su.role AS staff_role,su.doctor_id AS staff_doctor_id,su.active AS staff_active,d.active AS linked_doctor_active,u.username AS user_username,u.full_name AS user_full_name,u.phone AS user_phone,u.email AS user_email,u.role AS user_role,u.active AS user_active FROM sessions s LEFT JOIN staff_users su ON su.id=s.staff_user_id LEFT JOIN doctors d ON d.id=su.doctor_id LEFT JOIN users u ON u.id=s.user_id WHERE s.access_token_hash=$1 AND s.expires_at>NOW() LIMIT 1",
     [hashToken(token)]
   );
 
@@ -586,6 +586,7 @@ async function getAuthUser(req) {
 
   if (row.staff_user_id) {
     if (!row.staff_active) return null;
+    if (["doctor", "secretary"].includes(row.staff_role) && row.linked_doctor_active !== true) return null;
 
     return {
       type: "staff",
@@ -983,7 +984,7 @@ app.post("/api/staff/login", async (req, res) => {
     }
 
     const result = await pool.query(
-      "SELECT id,username,password_hash,full_name,role,doctor_id,phone,email,active FROM staff_users WHERE username=$1 LIMIT 1",
+      "SELECT su.id,su.username,su.password_hash,su.full_name,su.role,su.doctor_id,su.phone,su.email,su.active,d.active AS doctor_active FROM staff_users su LEFT JOIN doctors d ON d.id=su.doctor_id WHERE su.username=$1 LIMIT 1",
       [username]
     );
 
@@ -995,6 +996,9 @@ app.post("/api/staff/login", async (req, res) => {
 
     if (!staff.active) {
       return jsonError(res, 403, "هذا الحساب غير مفعل.");
+    }
+    if (["doctor", "secretary"].includes(staff.role) && staff.doctor_active !== true) {
+      return jsonError(res, 403, "حساب الطبيب المرتبط بهذا المستخدم غير مفعل.");
     }
 
     const passwordValid = await verifyPassword(password, staff.password_hash);
