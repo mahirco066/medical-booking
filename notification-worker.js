@@ -9,10 +9,11 @@ if (missing.length) {
   process.exit(1);
 }
 const SMS_FROM = process.env.TWILIO_SMS_FROM || "";
-const WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
-const ENABLED_CHANNELS = [SMS_FROM ? "sms" : null, WHATSAPP_FROM ? "whatsapp" : null].filter(Boolean);
+// WhatsApp rows are queued by the app, but delivery stays disabled until the
+// worker supports approved template messages and an explicit consent check.
+const ENABLED_CHANNELS = SMS_FROM ? ["sms"] : [];
 if (!ENABLED_CHANNELS.length) {
-  console.error("Notification worker not started. Configure TWILIO_SMS_FROM and/or TWILIO_WHATSAPP_FROM.");
+  console.error("Notification worker not started. Configure TWILIO_SMS_FROM. WhatsApp delivery is not enabled yet.");
   process.exit(1);
 }
 if (String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
