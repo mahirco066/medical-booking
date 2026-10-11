@@ -121,6 +121,30 @@ async function main() {
   });
   expectStatus(scheduleCreated, 200, "Doctor can create own schedule");
 
+  const disableDoctor = await request(`/api/admin/doctors/${doctorA.id}/status`, {
+    token: admin.token, method: "PATCH", body: { active: false }
+  });
+  expectStatus(disableDoctor, 200, "Admin can disable doctor A");
+
+  const disabledDoctorLogin = await request("/api/staff/login", {
+    method: "POST", body: { username: `doc_a_${suffix}`, password: "TestDoctorPass123" }
+  });
+  expectStatus(disabledDoctorLogin, 403, "Disabled doctor cannot log in");
+
+  const disabledSecretaryLogin = await request("/api/staff/login", {
+    method: "POST", body: { username: `sec_a_${suffix}`, password: "TestSecretaryPass123" }
+  });
+  expectStatus(disabledSecretaryLogin, 403, "Secretary cannot log in when linked doctor is disabled");
+
+  const disabledDoctorExistingSession = await request("/api/doctor/appointments", { token: doctorAUser.token });
+  expectStatus(disabledDoctorExistingSession, 403, "Existing doctor session loses access when doctor is disabled");
+
+  const disabledSecretaryExistingSession = await request("/api/doctor/appointments", { token: secretary.token });
+  expectStatus(disabledSecretaryExistingSession, 403, "Existing secretary session loses access when linked doctor is disabled");
+
+  const doctorBStillActive = await request("/api/doctor/appointments", { token: doctorBUser.token });
+  expectStatus(doctorBStillActive, 200, "Disabling doctor A does not affect doctor B");
+
   const adminCannotUseDoctorAppointments = await request("/api/doctor/appointments", { token: admin.token });
   expectStatus(adminCannotUseDoctorAppointments, 403, "Admin token is not accepted as doctor portal token");
 
