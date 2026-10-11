@@ -107,6 +107,12 @@ async function main() {
      appointmentConflictId, "Patient C", "000000003", "10:00"]
   );
 
+  const invalidCalendarDate = await request(`/api/doctor/appointments/${appointmentAId}`, {
+    token: doctorAUser.token, method: "PATCH",
+    body: { appointment_date: "2099-02-30", appointment_time: "09:00" }
+  });
+  expectStatus(invalidCalendarDate, 400, "Reject impossible calendar dates instead of returning a database error");
+
   const listA = await request("/api/doctor/appointments", { token: doctorAUser.token });
   expectStatus(listA, 200, "Doctor A appointments list");
   assert.deepEqual(listA.data.appointments.map(a => a.id).sort(), [appointmentAId, appointmentConflictId].sort(), "Doctor A must only see their own appointments");
