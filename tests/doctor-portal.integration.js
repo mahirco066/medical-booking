@@ -223,6 +223,60 @@ async function main() {
   expectStatus(validReschedule, 200, "Appointment can be moved to a free slot within active schedule");
   assert.equal(String(validReschedule.data.appointment.appointment_time).slice(0, 5), "09:30");
 
+  // Exercise the public booking endpoint with two different patients racing for the same doctor slot.
+  const patientAUsername = `race_patient_a_${suffix}`;
+  const patientBUsername = `race_patient_b_${suffix}`;
+  const patientAResult = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: patientAUsername,
+      full_name: "Concurrency Test Patient A",
+      phone: `0000001${suffix.slice(0, 2)}`,
+      whatsapp_phone: `0000002${suffix.slice(0, 2)}`,
+      password: "RacePatientPass123"
+    }
+  });
+  expectStatus(patientAResult, 200, "Register patient A for concurrency test");
+  const patientBResult = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: patientBUsername,
+      full_name: "Concurrency Test Patient B",
+      phone: `0000003${suffix.slice(0, 2)}`,
+      whatsapp_phone: `0000004${suffix.slice(0, 2)}`,
+      password: "RacePatientPass123"
+    }
+  });
+  expectStatus(patientBResult, 200, "Register patient B for concurrency test");
+
+  const concurrentBookings = await Promise.all([
+    request("/api/appointments", {
+      token: patientAResult.data.token,
+      method: "POST",
+      body: { service_id: serviceId, doctor_id: doctorA.id, appointment_date: date, appointment_time: "11:00" }
+    }),
+    request("/api/appointments", {
+      token: patientBResult.data.token,
+      method: "POST",
+      body: { service_id: serviceId, doctor_id: doctorA.id, appointment_date: date, appointment_time: "11:00" }
+    })
+  ]);
+  assert.equal(
+    concurrentBookings.filter(result => result.status === 200).length,
+    1,
+    `Exactly one concurrent booking should win: ${JSON.stringify(concurrentBookings)}`
+  );
+  assert.equal(
+    concurrentBookings.filter(result => result.status === 409).length,
+    1,
+    `The competing booking should receive HTTP 409: ${JSON.stringify(concurrentBookings)}`
+  );
+  const raceSlotRows = await pool.query(
+    "SELECT COUNT(*)::int AS count FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND status IN ('pending','confirmed')",
+    [doctorA.id, date, "11:00"]
+  );
+  assert.equal(raceSlotRows.rows[0].count, 1, "Concurrent requests must not create duplicate active appointments for the same doctor slot");
+
   const disableSchedule = await request(`/api/doctor/schedules/${scheduleForDate.data.schedule.id}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { active: false }
   });
