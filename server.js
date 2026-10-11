@@ -300,6 +300,21 @@ async function withDatabaseTransaction(work) {
   }
 }
 
+// Serialize writes targeting the same entity and appointment slot.
+// Transaction-scoped advisory locks are released automatically at COMMIT/ROLLBACK.
+async function lockAppointmentSlot(client, scope, entityId, date, time) {
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+    [String(scope) + ":" + String(entityId), String(date).slice(0, 10) + " " + String(time).slice(0, 5)]
+  );
+}
+
+function appointmentSlotConflict(message) {
+  const error = new Error(message || "Appointment slot is already booked");
+  error.code = "APPOINTMENT_SLOT_CONFLICT";
+  return error;
+}
+
 async function initDatabase() {
   console.log("Initializing Neon database...");
 
@@ -1543,6 +1558,26 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
     }
 
     const result = await withDatabaseTransaction(async (client) => {
+      await lockAppointmentSlot(client, "doctor", doctorId, appointmentDate, appointmentTime);
+      await lockAppointmentSlot(client, "patient", patient.id, appointmentDate, appointmentTime);
+
+      // Recheck after acquiring the locks; the earlier availability checks are only a fast preflight.
+      const lockedDoctorConflict = await client.query(
+        "SELECT id FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND status IN ('pending','confirmed') LIMIT 1",
+        [doctorId, appointmentDate, appointmentTime]
+      );
+      if (lockedDoctorConflict.rowCount) {
+        throw appointmentSlotConflict("هذا الموعد محجوز بالفعل للطبيب.");
+      }
+
+      const lockedPatientConflict = await client.query(
+        "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND status IN ('pending','confirmed') LIMIT 1",
+        [patient.id, appointmentDate, appointmentTime]
+      );
+      if (lockedPatientConflict.rowCount) {
+        throw appointmentSlotConflict("لديك موعد آخر في نفس التاريخ والوقت.");
+      }
+
       const inserted = await client.query(
         "INSERT INTO appointments (id,patient_id,doctor_id,service_id,patient_name,patient_phone,appointment_date,appointment_time,status,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9) RETURNING *",
         [
@@ -1565,6 +1600,9 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
       appointment: result.rows[0]
     });
   } catch (error) {
+    if (error.code === "APPOINTMENT_SLOT_CONFLICT") {
+      return jsonError(res, 409, error.message);
+    }
     console.error("Create appointment error:", error);
     return jsonError(res, 500, "تعذر إنشاء الموعد.");
   }
@@ -2580,6 +2618,25 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
     }
 
     const r=await withDatabaseTransaction(async (client) => {
+      await lockAppointmentSlot(client, "doctor", req.authUser.doctor_id, date, time);
+      if (current.rows[0].patient_id) {
+        await lockAppointmentSlot(client, "patient", current.rows[0].patient_id, date, time);
+      }
+
+      const doctorConflict = await client.query(
+        "SELECT id FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+        [req.authUser.doctor_id,date,time,req.params.id]
+      );
+      if (doctorConflict.rowCount) throw appointmentSlotConflict("هذا الموعد محجوز بالفعل للطبيب.");
+
+      if (current.rows[0].patient_id) {
+        const patientConflict = await client.query(
+          "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+          [current.rows[0].patient_id,date,time,req.params.id]
+        );
+        if (patientConflict.rowCount) throw appointmentSlotConflict("لدى المريض موعد آخر في التاريخ والوقت المحددين.");
+      }
+
       const updated = await client.query(
         "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
         [date,time,req.params.id,req.authUser.doctor_id]
@@ -2591,7 +2648,11 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
     });
     if(!r.rowCount)return jsonError(res,409,"تعذر تعديل الموعد؛ ربما تغيرت حالته.");
     return jsonOk(res,{message:"تم تعديل تاريخ ووقت الموعد.",appointment:r.rows[0]});
-  }catch(e){console.error("Doctor appointment edit error:",e);return jsonError(res,500,"تعذر تعديل تاريخ ووقت الموعد.");}
+  }catch(e){
+    if(e.code==="APPOINTMENT_SLOT_CONFLICT")return jsonError(res,409,e.message);
+    console.error("Doctor appointment edit error:",e);
+    return jsonError(res,500,"تعذر تعديل الموعد.");
+  }
 });
 
 app.get("/api/doctor/schedules", requireDoctor, async (req,res)=>{
@@ -2749,7 +2810,31 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
       return jsonError(res, 400, "وقت الموعد غير صحيح.");
     }
 
+    const currentResult = await pool.query(
+      "SELECT id,doctor_id,patient_id FROM appointments WHERE id=$1 LIMIT 1",
+      [req.params.id]
+    );
+    if (!currentResult.rowCount) return jsonError(res, 404, "الموعد غير موجود.");
+    const current = currentResult.rows[0];
+
     const result = await withDatabaseTransaction(async (client) => {
+      if (current.doctor_id) {
+        await lockAppointmentSlot(client, "doctor", current.doctor_id, appointmentDate, appointmentTime);
+        const doctorConflict = await client.query(
+          "SELECT id FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+          [current.doctor_id, appointmentDate, appointmentTime, req.params.id]
+        );
+        if (doctorConflict.rowCount) throw appointmentSlotConflict("هذا الموعد محجوز بالفعل للطبيب.");
+      }
+      if (current.patient_id) {
+        await lockAppointmentSlot(client, "patient", current.patient_id, appointmentDate, appointmentTime);
+        const patientConflict = await client.query(
+          "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+          [current.patient_id, appointmentDate, appointmentTime, req.params.id]
+        );
+        if (patientConflict.rowCount) throw appointmentSlotConflict("لدى المريض موعد آخر في التاريخ والوقت المحددين.");
+      }
+
       const updated = await client.query(
         `UPDATE appointments
          SET appointment_date = $1::date,
@@ -2774,6 +2859,7 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
       appointment: result.rows[0]
     });
   } catch (error) {
+    if (error.code === "APPOINTMENT_SLOT_CONFLICT") return jsonError(res, 409, error.message);
     console.error("Edit appointment error:", error);
     return jsonError(res, 500, "تعذر تعديل الموعد.");
   }
