@@ -124,19 +124,36 @@ async function finish(row, status, errorText, sentAt, providerMessageId) {
   );
 }
 
+async function isNotificationStillRelevant(row) {
+  const result = await pool.query(
+    "SELECT status,appointment_date::text AS appointment_date,to_char(appointment_time,'HH24:MI') AS appointment_time " +
+    "FROM appointments WHERE id=$1 LIMIT 1",
+    [row.appointment_id]
+  );
+  if (!result.rowCount) return false;
+  const appointment = result.rows[0];
+  const status = appointment.status;
+  const sameSlot =
+    String(row.payload.appointment_date || "").slice(0, 10) === String(appointment.appointment_date || "").slice(0, 10) &&
+    String(row.payload.appointment_time || "").slice(0, 5) === String(appointment.appointment_time || "").slice(0, 5);
+
+  if (row.event_type === "cancelled") return status === "cancelled";
+  if (row.event_type === "booked") return status === "pending" && sameSlot;
+  if (row.event_type === "confirmed") return status === "confirmed" && sameSlot;
+  if (row.event_type === "rescheduled") return ["pending", "confirmed"].includes(status) && sameSlot;
+  if (row.event_type === "reminder_24h") return ["pending", "confirmed"].includes(status) && sameSlot;
+  return false;
+}
+
 async function processOne() {
   const row = await claimOne();
   if (!row) return false;
   try {
-    if (row.event_type === "reminder_24h") {
-      const active = ["pending", "confirmed"].includes(row.current_status);
-      const sameSlot =
-        String(row.payload.appointment_date).slice(0, 10) === String(row.current_date).slice(0, 10) &&
-        String(row.payload.appointment_time).slice(0, 5) === String(row.current_time).slice(0, 5);
-      if (!active || !sameSlot) {
-        await finish(row, "cancelled", "Reminder skipped because appointment is inactive or its time changed.", null, null);
-        return true;
-      }
+    // Re-read the appointment immediately before delivery so queued events do not
+    // announce a booking state or time that has already changed.
+    if (!(await isNotificationStillRelevant(row))) {
+      await finish(row, "cancelled", "Notification skipped because appointment state or time changed.", null, null);
+      return true;
     }
     const sid = await sendTwilioSms(row.recipient_phone, messageFor(row));
     await finish(row, "sent", null, new Date(), sid);
