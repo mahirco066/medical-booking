@@ -70,6 +70,7 @@ test("doctor and secretary see only the UI features allowed for their role", asy
   const secretaryUsername = `browser_sec_${suffix}`;
   await page.locator("#secretaryName").fill("Browser Test Secretary");
   await page.locator("#secretaryPhone").fill("0000000099");
+  await page.locator("#secretaryWhatsappPhone").fill("0000000098");
   await page.locator("#secretaryUsername").fill(secretaryUsername);
   await page.locator("#secretaryPassword").fill("BrowserSecretaryPass123");
   await page.getByRole("button", { name: "إنشاء حساب السكرتير" }).click();
