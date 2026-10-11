@@ -74,6 +74,8 @@ test("doctor and secretary see only the UI features allowed for their role", asy
   await page.locator("#secretaryUsername").fill(secretaryUsername);
   await page.locator("#secretaryPassword").fill("BrowserSecretaryPass123");
   await page.getByRole("button", { name: "إنشاء حساب السكرتير" }).click();
+  // Fail with the actual form/API feedback rather than only timing out on the refreshed list.
+  await expect(page.locator("#toast")).toContainText("تم إنشاء الحساب.", { timeout: 10000 });
   await expect(page.locator("#secretariesList")).toContainText(secretaryUsername, { timeout: 10000 });
 
   await page.locator("#logoutBtn").click();
