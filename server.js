@@ -143,11 +143,11 @@ async function addColumnIfMissing(table, column, definition) {
    DATABASE INITIALIZATION
 ========================================================= */
 
-async function enqueueAppointmentNotifications(appointmentId, eventType) {
+async function enqueueAppointmentNotifications(appointmentId, eventType, db = pool) {
   const allowed = new Set(["booked", "confirmed", "cancelled", "rescheduled"]);
   if (!allowed.has(eventType)) throw new Error("Unsupported notification event");
 
-  const appointment = await pool.query(
+  const appointment = await db.query(
     `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,
             COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
             a.appointment_date::text AS appointment_date,a.appointment_time,a.status,a.updated_at,
@@ -175,7 +175,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
     { role: "patient", sms: a.patient_phone, whatsapp: a.patient_whatsapp },
     { role: "doctor", sms: a.doctor_phone, whatsapp: a.doctor_whatsapp }
   ];
-  const secretaries = await pool.query(
+  const secretaries = await db.query(
     `SELECT phone,whatsapp_phone FROM staff_users
       WHERE doctor_id=$1 AND role='secretary' AND active=TRUE`,
     [a.doctor_id]
@@ -195,9 +195,10 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
     appointment_time: timeText,
     appointment_status: a.status
   };
-  const client = await pool.connect();
+  const ownsTransaction = db === pool;
+  const client = ownsTransaction ? await pool.connect() : db;
   try {
-    await client.query("BEGIN");
+    if (ownsTransaction) await client.query("BEGIN");
 
     // Do not deliver stale queued messages after a cancellation or time change.
     // Keep already-sent rows as an audit trail and preserve the new event below.
@@ -273,9 +274,26 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
         }
       }
     }
-    await client.query("COMMIT");
+    if (ownsTransaction) await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (ownsTransaction) await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    if (ownsTransaction) client.release();
+  }
+}
+
+async function withDatabaseTransaction(work) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch (rollbackError) {
+      console.error("Transaction rollback failed:", rollbackError);
+    }
     throw error;
   } finally {
     client.release();
@@ -1524,22 +1542,24 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
       return jsonError(res, 409, "لديك موعد آخر في نفس التاريخ والوقت.");
     }
 
-    const result = await pool.query(
-      "INSERT INTO appointments (id,patient_id,doctor_id,service_id,patient_name,patient_phone,appointment_date,appointment_time,status,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9) RETURNING *",
-      [
-        makeId(),
-        patient.id,
-        doctorId,
-        serviceId,
-        patient.full_name,
-        patient.phone,
-        appointmentDate,
-        appointmentTime,
-        notes
-      ]
-    );
-
-    await enqueueAppointmentNotifications(result.rows[0].id, "booked");
+    const result = await withDatabaseTransaction(async (client) => {
+      const inserted = await client.query(
+        "INSERT INTO appointments (id,patient_id,doctor_id,service_id,patient_name,patient_phone,appointment_date,appointment_time,status,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9) RETURNING *",
+        [
+          makeId(),
+          patient.id,
+          doctorId,
+          serviceId,
+          patient.full_name,
+          patient.phone,
+          appointmentDate,
+          appointmentTime,
+          notes
+        ]
+      );
+      await enqueueAppointmentNotifications(inserted.rows[0].id, "booked", client);
+      return inserted;
+    });
     return jsonOk(res, {
       message: "تم إرسال طلب الحجز بنجاح.",
       appointment: result.rows[0]
@@ -1600,15 +1620,21 @@ app.patch("/api/appointments/:id/confirm", requireAuth, async (req, res) => {
       return jsonError(res, 400, "معرف الموعد غير صحيح.");
     }
 
-    const result = await pool.query(
-      `UPDATE appointments
-       SET status='confirmed',
-           updated_at=NOW()
-       WHERE id=$1
-         AND status='pending'
-       RETURNING *`,
-      [appointmentId]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE appointments
+         SET status='confirmed',
+             updated_at=NOW()
+         WHERE id=$1
+           AND status='pending'
+         RETURNING *`,
+        [appointmentId]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "confirmed", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(
@@ -1618,7 +1644,7 @@ app.patch("/api/appointments/:id/confirm", requireAuth, async (req, res) => {
       );
     }
 
-    await enqueueAppointmentNotifications(result.rows[0].id, "confirmed");
+
     return jsonOk(res, {
       message: "تم تأكيد الموعد بنجاح.",
       appointment: result.rows[0]
@@ -1641,15 +1667,21 @@ app.patch("/api/appointments/:id/cancel", requireAuth, async (req, res) => {
       return jsonError(res, 400, "معرف الموعد غير صحيح.");
     }
 
-    const result = await pool.query(
-      `UPDATE appointments
-       SET status = 'cancelled',
-           updated_at = NOW()
-       WHERE id = $1
-         AND status IN ('pending', 'confirmed')
-       RETURNING *`,
-      [appointmentId]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE appointments
+         SET status = 'cancelled',
+             updated_at = NOW()
+         WHERE id = $1
+           AND status IN ('pending', 'confirmed')
+         RETURNING *`,
+        [appointmentId]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "cancelled", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(
@@ -1659,7 +1691,7 @@ app.patch("/api/appointments/:id/cancel", requireAuth, async (req, res) => {
       );
     }
 
-    await enqueueAppointmentNotifications(result.rows[0].id, "cancelled");
+
     return jsonOk(res, {
       message: "تم إلغاء الحجز بنجاح.",
       appointment: result.rows[0]
@@ -1697,10 +1729,16 @@ app.patch("/api/my-appointments/:id/cancel", requireAuth, async (req, res) => {
     const reason =
       clean(req.body.reason || req.body.cancellation_reason) || null;
 
-    const result = await pool.query(
-      "UPDATE appointments a SET status='cancelled',cancellation_reason=$1,updated_at=NOW() FROM patients p WHERE a.id=$2 AND a.patient_id=p.id AND p.user_id=$3 AND a.status IN ('pending','confirmed') RETURNING a.*",
-      [reason, req.params.id, req.authUser.id]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments a SET status='cancelled',cancellation_reason=$1,updated_at=NOW() FROM patients p WHERE a.id=$2 AND a.patient_id=p.id AND p.user_id=$3 AND a.status IN ('pending','confirmed') RETURNING a.*",
+        [reason, req.params.id, req.authUser.id]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "cancelled", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(res, 404, "الموعد غير موجود أو لا يمكن إلغاؤه.");
@@ -2499,14 +2537,17 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
       return jsonError(res,409,"لا يمكن تغيير حالة موعد منتهٍ أو ملغى.");
     }
     const reason=clean(req.body.cancellation_reason||"")||null;
-    const r=await pool.query(
-      "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
-      [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
-    );
+    const r=await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
+      );
+      if (updated.rowCount && (status === "cancelled" || status === "confirmed")) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, status, client);
+      }
+      return updated;
+    });
     if(!r.rowCount)return jsonError(res,409,"تعذر تحديث الموعد؛ ربما تغيرت حالته.");
-    if (status === "cancelled" || status === "confirmed") {
-      await enqueueAppointmentNotifications(r.rows[0].id, status);
-    }
     return jsonOk(res,{message:"تم تحديث حالة الموعد.",appointment:r.rows[0]});
   }catch(e){console.error("Doctor appointment status error:",e);return jsonError(res,500,"تعذر تحديث حالة الموعد.");}
 });
@@ -2539,12 +2580,17 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
       if(patientConflict.rowCount)return jsonError(res,409,"لدى المريض موعد آخر في التاريخ والوقت المحددين.");
     }
 
-    const r=await pool.query(
-      "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
-      [date,time,req.params.id,req.authUser.doctor_id]
-    );
+    const r=await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        [date,time,req.params.id,req.authUser.doctor_id]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "rescheduled", client);
+      }
+      return updated;
+    });
     if(!r.rowCount)return jsonError(res,409,"تعذر تعديل الموعد؛ ربما تغيرت حالته.");
-    await enqueueAppointmentNotifications(r.rows[0].id, "rescheduled");
     return jsonOk(res,{message:"تم تعديل تاريخ ووقت الموعد.",appointment:r.rows[0]});
   }catch(e){console.error("Doctor appointment edit error:",e);return jsonError(res,500,"تعذر تعديل تاريخ ووقت الموعد.");}
 });
@@ -2663,14 +2709,20 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
     const cancellationReason =
       clean(req.body.cancellation_reason) || null;
 
-    const result = await pool.query(
-      "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 RETURNING *",
-      [
-        status,
-        status === "cancelled" ? cancellationReason : null,
-        req.params.id
-      ]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 RETURNING *",
+        [
+          status,
+          status === "cancelled" ? cancellationReason : null,
+          req.params.id
+        ]
+      );
+      if (updated.rowCount && (status === "cancelled" || status === "confirmed")) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, status, client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(res, 404, "الموعد غير موجود.");
@@ -2698,15 +2750,21 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
       return jsonError(res, 400, "وقت الموعد غير صحيح.");
     }
 
-    const result = await pool.query(
-      `UPDATE appointments
-       SET appointment_date = $1::date,
-           appointment_time = $2::time,
-           updated_at = NOW()
-       WHERE id = $3
-       RETURNING *`,
-      [appointmentDate, appointmentTime, req.params.id]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE appointments
+         SET appointment_date = $1::date,
+             appointment_time = $2::time,
+             updated_at = NOW()
+         WHERE id = $3
+         RETURNING *`,
+        [appointmentDate, appointmentTime, req.params.id]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "rescheduled", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(res, 404, "الموعد غير موجود.");
