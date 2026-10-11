@@ -45,6 +45,7 @@ async function sendTwilioSms(to, body) {
   const endpoint = "https://api.twilio.com/2010-04-01/Accounts/" + SID + "/Messages.json";
   const form = new URLSearchParams({ To: String(to).trim(), From: FROM, Body: body });
   const response = await fetch(endpoint, {
+    signal: AbortSignal.timeout(20000),
     method: "POST",
     headers: {
       Authorization: "Basic " + Buffer.from(SID + ":" + TOKEN).toString("base64"),
@@ -61,6 +62,14 @@ async function claimOne() {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Recover claims left behind by a worker that crashed or was restarted.
+    // Older rows with no lease timestamp are recovered too.
+    await client.query(
+      "UPDATE notification_outbox SET status='failed',locked_at=NULL," +
+      " scheduled_at=NOW(),last_error='Recovered stale processing lease.',updated_at=NOW()" +
+      " WHERE status='processing' AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')"
+    );
+
     const result = await client.query(
       "SELECT n.id,n.appointment_id,n.event_type,n.channel,n.recipient_role,n.recipient_phone,n.payload,n.attempts," +
       " a.status AS current_status,a.appointment_date::text AS current_date,to_char(a.appointment_time,'HH24:MI') AS current_time" +
@@ -71,7 +80,7 @@ async function claimOne() {
     );
     if (!result.rowCount) { await client.query("COMMIT"); return null; }
     const row = result.rows[0];
-    await client.query("UPDATE notification_outbox SET status='processing',attempts=attempts+1,updated_at=NOW(),last_error=NULL WHERE id=$1", [row.id]);
+    await client.query("UPDATE notification_outbox SET status='processing',attempts=attempts+1,locked_at=NOW(),updated_at=NOW(),last_error=NULL WHERE id=$1", [row.id]);
     await client.query("COMMIT");
     return row;
   } catch (error) {
@@ -82,14 +91,14 @@ async function claimOne() {
   }
 }
 
-async function finish(row, status, errorText, sentAt) {
+async function finish(row, status, errorText, sentAt, providerMessageId) {
   const attempts = Number(row.attempts || 0) + 1;
   const delaySeconds = Math.min(3600, 30 * Math.pow(2, Math.max(0, attempts - 1)));
   await pool.query(
-    "UPDATE notification_outbox SET status=$2,last_error=$3,sent_at=$4," +
-    " scheduled_at=CASE WHEN $2='failed' AND attempts < $5 THEN NOW() + ($6 * INTERVAL '1 second') ELSE scheduled_at END," +
+    "UPDATE notification_outbox SET status=$2,last_error=$3,sent_at=$4,provider_message_id=$5,locked_at=NULL," +
+    " scheduled_at=CASE WHEN $2='failed' AND attempts < $6 THEN NOW() + ($7 * INTERVAL '1 second') ELSE scheduled_at END," +
     " updated_at=NOW() WHERE id=$1",
-    [row.id, status, errorText || null, sentAt || null, MAX_ATTEMPTS, delaySeconds]
+    [row.id, status, errorText || null, sentAt || null, providerMessageId || null, MAX_ATTEMPTS, delaySeconds]
   );
 }
 
@@ -103,17 +112,17 @@ async function processOne() {
         String(row.payload.appointment_date).slice(0, 10) === String(row.current_date).slice(0, 10) &&
         String(row.payload.appointment_time).slice(0, 5) === String(row.current_time).slice(0, 5);
       if (!active || !sameSlot) {
-        await finish(row, "cancelled", "Reminder skipped because appointment is inactive or its time changed.", null);
+        await finish(row, "cancelled", "Reminder skipped because appointment is inactive or its time changed.", null, null);
         return true;
       }
     }
     const sid = await sendTwilioSms(row.recipient_phone, messageFor(row));
-    await finish(row, "sent", sid ? "Twilio SID: " + sid : null, new Date());
+    await finish(row, "sent", null, new Date(), sid);
     return true;
   } catch (error) {
     const message = String(error && error.message ? error.message : error).slice(0, 500);
     console.error("Notification delivery failed: " + row.id + " " + message);
-    await finish(row, "failed", message, null);
+    await finish(row, "failed", message, null, null);
     return true;
   }
 }
