@@ -350,6 +350,26 @@ async function initDatabase() {
     )
   `);
 
+
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS appointments (
+      id UUID PRIMARY KEY,
+      patient_id UUID REFERENCES patients(id) ON DELETE SET NULL,
+      doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+      service_id UUID REFERENCES services(id) ON DELETE SET NULL,
+      patient_name TEXT,
+      patient_phone TEXT,
+      appointment_date DATE NOT NULL,
+      appointment_time TIME NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      cancellation_reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notification_outbox (
       id UUID PRIMARY KEY,
@@ -374,24 +394,6 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_notification_outbox_due
     ON notification_outbox (scheduled_at, status)
     WHERE status IN ('pending','failed')
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS appointments (
-      id UUID PRIMARY KEY,
-      patient_id UUID REFERENCES patients(id) ON DELETE SET NULL,
-      doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
-      service_id UUID REFERENCES services(id) ON DELETE SET NULL,
-      patient_name TEXT,
-      patient_phone TEXT,
-      appointment_date DATE NOT NULL,
-      appointment_time TIME NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      notes TEXT,
-      cancellation_reason TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
   `);
 
   await pool.query(`
