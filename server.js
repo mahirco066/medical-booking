@@ -2,6 +2,7 @@ const express = require("express");
 const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
+const { calculateReminderAt } = require("./notification-utils");
 
 const app = express();
 const PORT = Number(process.env.PORT || 10000);
@@ -251,9 +252,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType) {
 
     if (["booked", "confirmed", "rescheduled"].includes(eventType) && ["pending", "confirmed"].includes(a.status)) {
       // Sudan local time (Africa/Khartoum, UTC+2): store reminder due time as UTC.
-      const [year, month, day] = dateText.split("-").map(Number);
-      const [hour, minute] = timeText.split(":").map(Number);
-      const reminderAt = new Date(Date.UTC(year, month - 1, day, hour - 2, minute) - 24 * 60 * 60 * 1000);
+      const reminderAt = calculateReminderAt(dateText, timeText);
       if (reminderAt.getTime() > Date.now()) {
         for (const contact of contacts) {
           for (const channel of ["sms", "whatsapp"]) {
