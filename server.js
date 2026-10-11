@@ -959,7 +959,7 @@ app.post("/api/login", async (req, res) => {
 });
 app.get("/api/patient/me", requireAuth, async (req, res) => {
   try {
-    if (!req.user?.id) {
+    if (req.authUser?.type !== "patient" || !req.authUser?.id) {
       return jsonError(res, 401, "جلسة الدخول غير صالحة.");
     }
 
@@ -979,7 +979,7 @@ app.get("/api/patient/me", requireAuth, async (req, res) => {
        FROM patients p
        WHERE p.user_id=$1
        LIMIT 1`,
-      [req.user.id]
+      [req.authUser.id]
     );
 
     if (!result.rowCount) {
@@ -1000,12 +1000,18 @@ app.patch("/api/patient/contact", requireAuth, async (req, res) => {
     const phone = clean(req.body.phone || "");
     const whatsappPhone = clean(req.body.whatsapp_phone || "");
     if (!phone || !whatsappPhone) return jsonError(res, 400, "رقم الهاتف ورقم WhatsApp مطلوبان.");
-    await pool.query("BEGIN");
+    const client = await pool.connect();
     try {
-      await pool.query("UPDATE users SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE id=$3 AND role='patient'", [phone, whatsappPhone, req.authUser.id]);
-      await pool.query("UPDATE patients SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE user_id=$3", [phone, whatsappPhone, req.authUser.id]);
-      await pool.query("COMMIT");
-    } catch (error) { await pool.query("ROLLBACK"); throw error; }
+      await client.query("BEGIN");
+      await client.query("UPDATE users SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE id=$3 AND role='patient'", [phone, whatsappPhone, req.authUser.id]);
+      await client.query("UPDATE patients SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE user_id=$3", [phone, whatsappPhone, req.authUser.id]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
     return jsonOk(res, { message: "تم تحديث أرقام التواصل بنجاح.", phone, whatsapp_phone: whatsappPhone });
   } catch (error) { console.error("Update patient contacts error:", error); return jsonError(res, 500, "تعذر تحديث أرقام التواصل."); }
 });
