@@ -15,7 +15,7 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: process.env.NODE_ENV === "test" ? false : { rejectUnauthorized: false }
 });
 
 app.use(express.json({ limit: "10mb" }));
@@ -47,7 +47,17 @@ function normalizeUsername(value) {
 }
 
 function validDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1) return false;
+
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
 }
 
 function validTime(value) {
@@ -333,6 +343,7 @@ async function initDatabase() {
     ["staff_users", "password_hash", "TEXT"],
     ["staff_users", "full_name", "TEXT NOT NULL DEFAULT 'موظف'"],
     ["staff_users", "role", "TEXT NOT NULL DEFAULT 'staff'"],
+    ["staff_users", "doctor_id", "UUID REFERENCES doctors(id) ON DELETE CASCADE"],
     ["staff_users", "phone", "TEXT"],
     ["staff_users", "email", "TEXT"],
     ["staff_users", "active", "BOOLEAN NOT NULL DEFAULT TRUE"],
@@ -575,7 +586,7 @@ async function getAuthUser(req) {
   if (!token) return null;
 
   const result = await pool.query(
-    "SELECT s.id AS session_id,s.expires_at,s.staff_user_id,s.user_id,su.username AS staff_username,su.full_name AS staff_full_name,su.role AS staff_role,su.active AS staff_active,u.username AS user_username,u.full_name AS user_full_name,u.phone AS user_phone,u.email AS user_email,u.role AS user_role,u.active AS user_active FROM sessions s LEFT JOIN staff_users su ON su.id=s.staff_user_id LEFT JOIN users u ON u.id=s.user_id WHERE s.access_token_hash=$1 AND s.expires_at>NOW() LIMIT 1",
+    "SELECT s.id AS session_id,s.expires_at,s.staff_user_id,s.user_id,su.username AS staff_username,su.full_name AS staff_full_name,su.role AS staff_role,su.doctor_id AS staff_doctor_id,su.active AS staff_active,d.active AS linked_doctor_active,u.username AS user_username,u.full_name AS user_full_name,u.phone AS user_phone,u.email AS user_email,u.role AS user_role,u.active AS user_active FROM sessions s LEFT JOIN staff_users su ON su.id=s.staff_user_id LEFT JOIN doctors d ON d.id=su.doctor_id LEFT JOIN users u ON u.id=s.user_id WHERE s.access_token_hash=$1 AND s.expires_at>NOW() LIMIT 1",
     [hashToken(token)]
   );
 
@@ -585,6 +596,7 @@ async function getAuthUser(req) {
 
   if (row.staff_user_id) {
     if (!row.staff_active) return null;
+    if (["doctor", "secretary"].includes(row.staff_role) && row.linked_doctor_active !== true) return null;
 
     return {
       type: "staff",
@@ -592,7 +604,8 @@ async function getAuthUser(req) {
       id: row.staff_user_id,
       username: row.staff_username,
       full_name: row.staff_full_name,
-      role: row.staff_role
+      role: row.staff_role,
+      doctor_id: row.staff_doctor_id || null
     };
   }
 
@@ -633,16 +646,42 @@ async function requireAuth(req, res, next) {
 async function requireAdmin(req, res, next) {
   try {
     const user = await getAuthUser(req);
-
     if (!user || user.type !== "staff" || user.role !== "admin") {
       return jsonError(res, 403, "صلاحية المدير مطلوبة.");
     }
-
     req.authUser = user;
     next();
   } catch (error) {
     console.error("Admin authentication error:", error);
     return jsonError(res, 500, "حدث خطأ أثناء التحقق من صلاحيات المدير.");
+  }
+}
+
+async function requireDoctorOrSecretary(req, res, next) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user || user.type !== "staff" || !["doctor", "secretary"].includes(user.role) || !user.doctor_id) {
+      return jsonError(res, 403, "هذا الحساب لا يملك صلاحية إدارة مواعيد الطبيب.");
+    }
+    req.authUser = user;
+    next();
+  } catch (error) {
+    console.error("Doctor portal authentication error:", error);
+    return jsonError(res, 500, "حدث خطأ أثناء التحقق من صلاحيات الحساب.");
+  }
+}
+
+async function requireDoctor(req, res, next) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user || user.type !== "staff" || user.role !== "doctor" || !user.doctor_id) {
+      return jsonError(res, 403, "هذه العملية متاحة للطبيب المسؤول فقط.");
+    }
+    req.authUser = user;
+    next();
+  } catch (error) {
+    console.error("Doctor authentication error:", error);
+    return jsonError(res, 500, "حدث خطأ أثناء التحقق من صلاحيات الطبيب.");
   }
 }
 
@@ -955,7 +994,7 @@ app.post("/api/staff/login", async (req, res) => {
     }
 
     const result = await pool.query(
-      "SELECT id,username,password_hash,full_name,role,phone,email,active FROM staff_users WHERE username=$1 LIMIT 1",
+      "SELECT su.id,su.username,su.password_hash,su.full_name,su.role,su.doctor_id,su.phone,su.email,su.active,d.active AS doctor_active FROM staff_users su LEFT JOIN doctors d ON d.id=su.doctor_id WHERE su.username=$1 LIMIT 1",
       [username]
     );
 
@@ -967,6 +1006,9 @@ app.post("/api/staff/login", async (req, res) => {
 
     if (!staff.active) {
       return jsonError(res, 403, "هذا الحساب غير مفعل.");
+    }
+    if (["doctor", "secretary"].includes(staff.role) && staff.doctor_active !== true) {
+      return jsonError(res, 403, "حساب الطبيب المرتبط بهذا المستخدم غير مفعل.");
     }
 
     const passwordValid = await verifyPassword(password, staff.password_hash);
@@ -987,6 +1029,7 @@ app.post("/api/staff/login", async (req, res) => {
         username: staff.username,
         full_name: staff.full_name,
         role: staff.role,
+        doctor_id: staff.doctor_id || null,
         phone: staff.phone,
         email: staff.email
       }
@@ -1106,7 +1149,7 @@ function minutesToTime(minutes) {
 
 async function getDoctorSchedules(doctorId, dayOfWeek) {
   const params = [doctorId];
-  let sql = "SELECT id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active,created_at,updated_at FROM doctor_schedules WHERE doctor_id=$1";
+  let sql = "SELECT id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active,created_at,updated_at FROM doctor_schedules WHERE doctor_id=$1 AND active=TRUE";
 
   if (dayOfWeek !== undefined && dayOfWeek !== null) {
     sql += " AND day_of_week=$2";
@@ -1119,10 +1162,10 @@ async function getDoctorSchedules(doctorId, dayOfWeek) {
   return result.rows;
 }
 
-async function getBookedTimes(doctorId, dateString) {
+async function getBookedTimes(doctorId, dateString, excludeAppointmentId = null) {
   const result = await pool.query(
-    "SELECT appointment_time FROM appointments WHERE doctor_id=$1 AND appointment_date=$2 AND status IN ('pending','confirmed')",
-    [doctorId, dateString]
+    "SELECT appointment_time FROM appointments WHERE doctor_id=$1 AND appointment_date=$2 AND status IN ('pending','confirmed') AND ($3::uuid IS NULL OR id<>$3::uuid)",
+    [doctorId, dateString, excludeAppointmentId]
   );
 
   return result.rows.map(r => String(r.appointment_time).slice(0, 5));
@@ -1161,7 +1204,7 @@ function generateAvailableSlots(schedules, bookedTimes) {
   return slots;
 }
 
-async function isAppointmentTimeAvailable(doctorId, dateString, timeString) {
+async function isAppointmentTimeAvailable(doctorId, dateString, timeString, excludeAppointmentId = null) {
   const day = getDayOfWeek(dateString);
   const schedules = await getDoctorSchedules(doctorId, day);
 
@@ -1193,7 +1236,7 @@ async function isAppointmentTimeAvailable(doctorId, dateString, timeString) {
     };
   }
 
-  const booked = await getBookedTimes(doctorId, dateString);
+  const booked = await getBookedTimes(doctorId, dateString, excludeAppointmentId);
 
   if (booked.includes(String(timeString).slice(0, 5))) {
     return {
@@ -1250,6 +1293,11 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
 
     if (!doctor.rowCount) {
       return jsonError(res, 404, "الطبيب غير موجود أو غير متاح.");
+    }
+
+    const availability = await isAppointmentTimeAvailable(doctorId, appointmentDate, appointmentTime);
+    if (!availability.available) {
+      return jsonError(res, 409, availability.reason);
     }
 
     const doctorConflict = await pool.query(
@@ -1626,7 +1674,7 @@ app.get("/api/staff/me", requireAdmin, async (req, res) => {
 app.get("/api/admin/doctors", requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id,full_name,specialty,area,phone,email,bio,image_url,rating,active,created_at,updated_at FROM doctors ORDER BY created_at DESC"
+      "SELECT d.id,d.full_name,d.specialty,d.area,d.phone,d.email,d.bio,d.image_url,d.rating,d.active,d.created_at,d.updated_at,su.username AS account_username,(su.id IS NOT NULL) AS has_account FROM doctors d LEFT JOIN staff_users su ON su.doctor_id=d.id AND su.role='doctor' ORDER BY d.created_at DESC"
     );
 
     return jsonOk(res, {
@@ -1681,6 +1729,34 @@ app.post("/api/admin/doctors", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Admin create doctor error:", error);
     return jsonError(res, 500, "تعذر إضافة الطبيب.");
+  }
+});
+
+
+app.post("/api/admin/doctors/:id/account", requireAdmin, async (req, res) => {
+  try {
+    const doctorId = req.params.id;
+    const username = normalizeUsername(req.body.username);
+    const password = String(req.body.password || "");
+    const fullName = clean(req.body.full_name || "");
+    if (!username || !password) return jsonError(res, 400, "اسم مستخدم الطبيب وكلمة المرور مطلوبان.");
+    if (password.length < 8) return jsonError(res, 400, "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.");
+    const doctor = await pool.query("SELECT id,full_name FROM doctors WHERE id=$1 LIMIT 1", [doctorId]);
+    if (!doctor.rowCount) return jsonError(res, 404, "الطبيب غير موجود.");
+    const passwordData = await hashPassword(password);
+    const passwordHash = `${passwordData.salt}:${passwordData.hash}`;
+    const existing = await pool.query("SELECT id FROM staff_users WHERE doctor_id=$1 AND role='doctor' LIMIT 1", [doctorId]);
+    let result;
+    if (existing.rowCount) {
+      result = await pool.query("UPDATE staff_users SET username=$1,password_hash=$2,full_name=$3,active=TRUE,updated_at=NOW() WHERE id=$4 RETURNING id,username,full_name,role,doctor_id", [username,passwordHash,fullName || doctor.rows[0].full_name,existing.rows[0].id]);
+    } else {
+      result = await pool.query("INSERT INTO staff_users (id,username,password_hash,full_name,role,doctor_id,active) VALUES ($1,$2,$3,$4,'doctor',$5,TRUE) RETURNING id,username,full_name,role,doctor_id", [makeId(),username,passwordHash,fullName || doctor.rows[0].full_name,doctorId]);
+    }
+    return jsonOk(res, { message: existing.rowCount ? "تم تحديث حساب الطبيب." : "تم إنشاء حساب الطبيب.", account: result.rows[0] });
+  } catch (error) {
+    if (error.code === "23505") return jsonError(res, 409, "اسم المستخدم مستخدم بالفعل، اختر اسمًا آخر.");
+    console.error("Doctor account setup error:", error);
+    return jsonError(res, 500, "تعذر إنشاء حساب الطبيب.");
   }
 });
 
@@ -2162,6 +2238,142 @@ app.delete("/api/admin/services/:id", requireAdmin, async (req, res) => {
 
     return jsonError(res, 500, "تعذر حذف الخدمة.");
   }
+});
+
+
+/* DOCTOR AND SECRETARY PORTAL */
+app.get("/api/doctor/me", requireDoctorOrSecretary, async (req, res) => {
+  try {
+    const r = await pool.query("SELECT su.id AS staff_id,su.username,su.full_name AS staff_name,su.role,su.doctor_id,d.full_name AS doctor_name,d.specialty,d.area FROM staff_users su JOIN doctors d ON d.id=su.doctor_id WHERE su.id=$1 LIMIT 1", [req.authUser.id]);
+    if (!r.rowCount) return jsonError(res, 404, "بيانات الطبيب غير موجودة.");
+    return jsonOk(res, { profile: r.rows[0] });
+  } catch (e) { console.error("Doctor portal profile error:",e); return jsonError(res,500,"تعذر تحميل بيانات الحساب."); }
+});
+
+app.get("/api/doctor/appointments", requireDoctorOrSecretary, async (req, res) => {
+  try {
+    const values=[req.authUser.doctor_id], conditions=["a.doctor_id=$1"]; let n=2;
+    const date=clean(req.query.date||""), status=clean(req.query.status||"");
+    if(date && validDate(date)){conditions.push("a.appointment_date=$"+n++);values.push(date);}
+    if(status){conditions.push("a.status=$"+n++);values.push(status);}
+    const r=await pool.query("SELECT a.id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,s.name AS service_name,s.price FROM appointments a LEFT JOIN services s ON s.id=a.service_id WHERE "+conditions.join(" AND ")+" ORDER BY a.appointment_date ASC,a.appointment_time ASC",values);
+    return jsonOk(res,{appointments:r.rows});
+  } catch(e){console.error("Doctor appointments error:",e);return jsonError(res,500,"تعذر تحميل مواعيد الطبيب.");}
+});
+
+app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async (req,res)=>{
+  try{
+    const status=clean(req.body.status), allowed=["pending","confirmed","completed","cancelled","no_show"];
+    if(!allowed.includes(status))return jsonError(res,400,"حالة الموعد غير صحيحة.");
+    if(req.authUser.role==="secretary"&&!["confirmed","cancelled"].includes(status)){
+      return jsonError(res,403,"يمكن للسكرتير تأكيد الموعد أو إلغاءه فقط.");
+    }
+    const current=await pool.query(
+      "SELECT id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      [req.params.id,req.authUser.doctor_id]
+    );
+    if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+    if(!["pending","confirmed"].includes(current.rows[0].status)){
+      return jsonError(res,409,"لا يمكن تغيير حالة موعد منتهٍ أو ملغى.");
+    }
+    const reason=clean(req.body.cancellation_reason||"")||null;
+    const r=await pool.query(
+      "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+      [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
+    );
+    if(!r.rowCount)return jsonError(res,409,"تعذر تحديث الموعد؛ ربما تغيرت حالته.");
+    return jsonOk(res,{message:"تم تحديث حالة الموعد.",appointment:r.rows[0]});
+  }catch(e){console.error("Doctor appointment status error:",e);return jsonError(res,500,"تعذر تحديث حالة الموعد.");}
+});
+
+app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,res)=>{
+  try{
+    const date=clean(req.body.appointment_date||""), time=clean(req.body.appointment_time||"");
+    if(!validDate(date))return jsonError(res,400,"تاريخ الموعد غير صحيح.");
+    if(!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time))return jsonError(res,400,"وقت الموعد غير صحيح.");
+
+    const current=await pool.query(
+      "SELECT id,patient_id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      [req.params.id,req.authUser.doctor_id]
+    );
+    if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+    if(!["pending","confirmed"].includes(current.rows[0].status)) {
+      return jsonError(res,409,"لا يمكن تعديل موعد غير نشط.");
+    }
+
+    const availability=await isAppointmentTimeAvailable(
+      req.authUser.doctor_id,date,time,req.params.id
+    );
+    if(!availability.available)return jsonError(res,409,availability.reason);
+
+    if(current.rows[0].patient_id) {
+      const patientConflict=await pool.query(
+        "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+        [current.rows[0].patient_id,date,time,req.params.id]
+      );
+      if(patientConflict.rowCount)return jsonError(res,409,"لدى المريض موعد آخر في التاريخ والوقت المحددين.");
+    }
+
+    const r=await pool.query(
+      "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+      [date,time,req.params.id,req.authUser.doctor_id]
+    );
+    if(!r.rowCount)return jsonError(res,409,"تعذر تعديل الموعد؛ ربما تغيرت حالته.");
+    return jsonOk(res,{message:"تم تعديل تاريخ ووقت الموعد.",appointment:r.rows[0]});
+  }catch(e){console.error("Doctor appointment edit error:",e);return jsonError(res,500,"تعذر تعديل تاريخ ووقت الموعد.");}
+});
+
+app.get("/api/doctor/schedules", requireDoctor, async (req,res)=>{
+  try{const r=await pool.query("SELECT id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active FROM doctor_schedules WHERE doctor_id=$1 ORDER BY day_of_week,start_time",[req.authUser.doctor_id]);return jsonOk(res,{schedules:r.rows});}
+  catch(e){console.error("Doctor schedules error:",e);return jsonError(res,500,"تعذر تحميل دوام الطبيب.");}
+});
+app.post("/api/doctor/schedules", requireDoctor, async (req,res)=>{
+  try{
+    const day=Number(req.body.day_of_week),start=clean(req.body.start_time||""),end=clean(req.body.end_time||""),duration=Number(req.body.slot_duration_minutes||30),active=req.body.active===false?false:true;
+    if(!Number.isInteger(day)||day<0||day>6)return jsonError(res,400,"يوم الأسبوع غير صحيح.");
+    if(!validTime(start)||!validTime(end)||start>=end)return jsonError(res,400,"وقت الدوام غير صحيح.");
+    if(!Number.isInteger(duration)||duration<=0)return jsonError(res,400,"مدة الموعد غير صحيحة.");
+    const overlap=await pool.query("SELECT id FROM doctor_schedules WHERE doctor_id=$1 AND day_of_week=$2 AND start_time < $4 AND end_time > $3 LIMIT 1",[req.authUser.doctor_id,day,start,end]);
+    if(overlap.rowCount)return jsonError(res,409,"يوجد دوام آخر متداخل في اليوم نفسه.");
+    const r=await pool.query("INSERT INTO doctor_schedules (id,doctor_id,day_of_week,start_time,end_time,slot_duration_minutes,active) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *",[makeId(),req.authUser.doctor_id,day,start,end,duration,active]);
+    return jsonOk(res,{message:"تم حفظ الدوام.",schedule:r.rows[0]});
+  }catch(e){console.error("Create doctor schedule error:",e);return jsonError(res,500,"تعذر حفظ الدوام.");}
+});
+app.put("/api/doctor/schedules/:id", requireDoctor, async (req,res)=>{
+  try{
+    const day=Number(req.body.day_of_week),start=clean(req.body.start_time||""),end=clean(req.body.end_time||""),duration=Number(req.body.slot_duration_minutes||30),active=req.body.active===false?false:true;
+    if(!Number.isInteger(day)||day<0||day>6)return jsonError(res,400,"يوم الأسبوع غير صحيح.");
+    if(!validTime(start)||!validTime(end)||start>=end)return jsonError(res,400,"وقت الدوام غير صحيح.");
+    if(!Number.isInteger(duration)||duration<=0)return jsonError(res,400,"مدة الموعد غير صحيحة.");
+    const overlap=await pool.query("SELECT id FROM doctor_schedules WHERE doctor_id=$1 AND day_of_week=$2 AND id<>$3 AND start_time < $5 AND end_time > $4 LIMIT 1",[req.authUser.doctor_id,day,req.params.id,start,end]);
+    if(overlap.rowCount)return jsonError(res,409,"يوجد دوام آخر متداخل في اليوم نفسه.");
+    const r=await pool.query("UPDATE doctor_schedules SET day_of_week=$1,start_time=$2,end_time=$3,slot_duration_minutes=$4,active=$5,updated_at=NOW() WHERE id=$6 AND doctor_id=$7 RETURNING *",[day,start,end,duration,active,req.params.id,req.authUser.doctor_id]);
+    if(!r.rowCount)return jsonError(res,404,"فترة الدوام غير موجودة.");
+    return jsonOk(res,{message:"تم تحديث الدوام.",schedule:r.rows[0]});
+  }catch(e){console.error("Update doctor schedule error:",e);return jsonError(res,500,"تعذر تحديث الدوام.");}
+});
+app.patch("/api/doctor/schedules/:id/status", requireDoctor, async (req,res)=>{
+  try{const active=req.body.active===true;const r=await pool.query("UPDATE doctor_schedules SET active=$1,updated_at=NOW() WHERE id=$2 AND doctor_id=$3 RETURNING *",[active,req.params.id,req.authUser.doctor_id]);if(!r.rowCount)return jsonError(res,404,"فترة الدوام غير موجودة.");return jsonOk(res,{message:active?"تم تفعيل الدوام.":"تم تعطيل الدوام.",schedule:r.rows[0]});}
+  catch(e){console.error("Toggle doctor schedule error:",e);return jsonError(res,500,"تعذر تغيير حالة الدوام.");}
+});
+
+app.get("/api/doctor/secretaries", requireDoctor, async (req,res)=>{
+  try{const r=await pool.query("SELECT id,username,full_name,phone,email,active,created_at FROM staff_users WHERE doctor_id=$1 AND role='secretary' ORDER BY created_at DESC",[req.authUser.doctor_id]);return jsonOk(res,{secretaries:r.rows});}
+  catch(e){console.error("Doctor secretaries list error:",e);return jsonError(res,500,"تعذر تحميل حسابات السكرتارية.");}
+});
+app.post("/api/doctor/secretaries", requireDoctor, async (req,res)=>{
+  try{
+    const fullName=clean(req.body.full_name||""),username=normalizeUsername(req.body.username),password=String(req.body.password||""),phone=clean(req.body.phone||"")||null;
+    if(!fullName||!username||!password)return jsonError(res,400,"الاسم واسم المستخدم وكلمة المرور مطلوبة.");
+    if(password.length<8)return jsonError(res,400,"يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.");
+    const h=await hashPassword(password),passwordHash=`${h.salt}:${h.hash}`;
+    const r=await pool.query("INSERT INTO staff_users (id,username,password_hash,full_name,role,doctor_id,phone,active) VALUES ($1,$2,$3,$4,'secretary',$5,$6,TRUE) RETURNING id,username,full_name,role,doctor_id,phone,active,created_at",[makeId(),username,passwordHash,fullName,req.authUser.doctor_id,phone]);
+    return jsonOk(res,{message:"تم إنشاء حساب السكرتير.",secretary:r.rows[0]});
+  }catch(e){if(e.code==="23505")return jsonError(res,409,"اسم المستخدم مستخدم بالفعل.");console.error("Create secretary error:",e);return jsonError(res,500,"تعذر إنشاء حساب السكرتير.");}
+});
+app.patch("/api/doctor/secretaries/:id/status", requireDoctor, async (req,res)=>{
+  try{const active=req.body.active===true;const r=await pool.query("UPDATE staff_users SET active=$1,updated_at=NOW() WHERE id=$2 AND doctor_id=$3 AND role='secretary' RETURNING id,username,full_name,active",[active,req.params.id,req.authUser.doctor_id]);if(!r.rowCount)return jsonError(res,404,"حساب السكرتير غير موجود.");return jsonOk(res,{message:active?"تم تفعيل حساب السكرتير.":"تم تعطيل حساب السكرتير.",secretary:r.rows[0]});}
+  catch(e){console.error("Toggle secretary error:",e);return jsonError(res,500,"تعذر تغيير حالة حساب السكرتير.");}
 });
 
 /* ADMIN APPOINTMENTS */

@@ -1,0 +1,105 @@
+name: Doctor portal syntax checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/doctor-secretary-portal]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: medical_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d medical_booking_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/medical_booking_test
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: TestAdminPass123
+      TEST_BASE_URL: http://127.0.0.1:18080
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check server JavaScript syntax
+        run: node --check server.js
+      - name: Check inline JavaScript in portal HTML files
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const { execFileSync } = require('node:child_process');
+
+          for (const htmlFile of ['public/dashboard.html', 'public/doctor.html']) {
+            if (!fs.existsSync(htmlFile)) {
+              if (htmlFile === 'public/doctor.html') {
+                throw new Error(`Required portal file is missing: ${htmlFile}`);
+              }
+              continue;
+            }
+
+            const html = fs.readFileSync(htmlFile, 'utf8');
+            const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)]
+              .filter(match => !/\bsrc\s*=/.test(match[1]))
+              .map(match => match[2])
+              .filter(source => source.trim());
+
+            scripts.forEach((source, index) => {
+              const file = path.join(os.tmpdir(), `portal-script-${path.basename(htmlFile)}-${index}.js`);
+              fs.writeFileSync(file, source);
+              execFileSync(process.execPath, ['--check', file], { stdio: 'inherit' });
+            });
+            console.log(`Syntax OK: ${htmlFile} (${scripts.length} inline script(s))`);
+          }
+          NODE
+
+      - name: Run source-level portal security checks
+        run: node --test tests/doctor-portal-security.test.js
+
+      - name: Install dependencies for isolated integration test
+        run: npm install --no-audit --no-fund
+      - name: Start app against temporary PostgreSQL
+        run: |
+          PORT=18080 node server.js > /tmp/medical-booking-test.log 2>&1 &
+          echo $! > /tmp/medical-booking-test.pid
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:18080/api/services > /dev/null; then
+              echo "Test server is ready."
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/medical-booking-test.pid)" 2>/dev/null; then
+              cat /tmp/medical-booking-test.log
+              exit 1
+            fi
+            sleep 2
+          done
+          cat /tmp/medical-booking-test.log
+          echo "Test server did not become ready in time."
+          exit 1
+      - name: Test doctor and secretary permissions against temporary database
+        run: node tests/doctor-portal.integration.js
+      - name: Show server log if integration test fails
+        if: failure()
+        run: cat /tmp/medical-booking-test.log || true
+      - name: Stop test server
+        if: always()
+        run: |
+          if [ -f /tmp/medical-booking-test.pid ]; then
+            kill "$(cat /tmp/medical-booking-test.pid)" 2>/dev/null || true
+          fi

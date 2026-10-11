@@ -1,0 +1,77 @@
+name: Doctor portal browser checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/doctor-secretary-portal]
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: medical_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d medical_booking_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/medical_booking_test
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: TestAdminPass123
+      TEST_BASE_URL: http://127.0.0.1:18080
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install app dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check server and browser test syntax
+        run: |
+          node --check server.js
+          node --check tests/doctor-portal.browser.spec.js
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund @playwright/test
+          npx playwright install --with-deps chromium
+      - name: Start app against temporary PostgreSQL
+        run: |
+          PORT=18080 node server.js > /tmp/medical-booking-test.log 2>&1 &
+          echo $! > /tmp/medical-booking-test.pid
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:18080/api/services > /dev/null; then
+              echo "Test server is ready."
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/medical-booking-test.pid)" 2>/dev/null; then
+              cat /tmp/medical-booking-test.log
+              exit 1
+            fi
+            sleep 2
+          done
+          cat /tmp/medical-booking-test.log
+          echo "Test server did not become ready in time."
+          exit 1
+      - name: Run doctor and secretary UI browser test
+        run: npx playwright test tests/doctor-portal.browser.spec.js --reporter=line
+      - name: Show server log if browser test fails
+        if: failure()
+        run: cat /tmp/medical-booking-test.log || true
+      - name: Stop test server
+        if: always()
+        run: |
+          if [ -f /tmp/medical-booking-test.pid ]; then
+            kill "$(cat /tmp/medical-booking-test.pid)" 2>/dev/null || true
+          fi
