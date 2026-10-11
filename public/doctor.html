@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>موعدي | لوحة الطبيب</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#13233f;--teal:#087f8c;--teal2:#0ea5a4;--bg:#eef4f8;--card:#fff;--text:#172b4d;--muted:#64748b;--line:#dce6ee;--purple:#6d5bd0;--red:#c2414b;--green:#16805d;--amber:#a16207}
+*{box-sizing:border-box}body{margin:0;font-family:Cairo,Arial,sans-serif;background:linear-gradient(135deg,#edf5f8,#e7edf7);color:var(--text)}button,input,select{font:inherit}button{cursor:pointer;border:0;border-radius:11px;padding:10px 14px;font-weight:800}.hidden{display:none!important}
+.top{background:linear-gradient(115deg,#12213b,#0c6674);color:white;padding:20px clamp(16px,4vw,44px);display:flex;justify-content:space-between;align-items:center;gap:16px;box-shadow:0 10px 28px #142d4730}.brand{display:flex;align-items:center;gap:13px}.logo{width:47px;height:47px;display:grid;place-items:center;border-radius:15px;background:#ffffff20;font-size:25px}.top h1{font-size:20px;margin:0}.top p{font-size:12px;margin:3px 0 0;color:#c8e7ec}.logout{background:#ffffff1b;color:white;border:1px solid #ffffff40}
+.wrap{max-width:1200px;margin:25px auto;padding:0 16px 50px}.welcome{background:linear-gradient(110deg,#fff,#f4fbfc);border:1px solid var(--line);border-radius:22px;padding:23px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:15px;box-shadow:0 8px 26px #17344d0a}.welcome h2{margin:0 0 4px;font-size:22px}.welcome p{margin:0;color:var(--muted);font-size:13px}.role{display:inline-flex;padding:7px 12px;border-radius:30px;background:#dff5f1;color:#087568;font-size:12px;font-weight:900}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab{background:#fff;color:#475569;border:1px solid var(--line)}.tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;margin-bottom:18px;box-shadow:0 8px 26px #17344d0a}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}.panel h3{margin:0;font-size:17px}.sub{color:var(--muted);font-size:12px;margin-top:4px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.stat{border-radius:16px;padding:17px;background:linear-gradient(135deg,#e3f8f5,#f4fbfd);border:1px solid #ccebe8}.stat span{font-size:12px;color:#42616b}.stat strong{display:block;font-size:26px;color:#126c76;margin-top:4px}
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:14px 0}.field{display:flex;flex-direction:column;gap:6px;min-width:140px;flex:1}.field label{font-size:12px;font-weight:800;color:#42536a}.field input,.field select{width:100%;border:1px solid #cbd8e3;border-radius:10px;padding:10px 11px;background:#fbfdff;color:var(--text);outline-color:var(--teal2)}
+.primary{background:var(--teal);color:white}.secondary{background:#e8f2f7;color:#25445b}.danger{background:#fff0f0;color:#b42332}.purple{background:#eeeaff;color:#5d4ac1}.green{background:#e3f8ee;color:#08734f}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:13px}table{border-collapse:collapse;width:100%;min-width:760px}th,td{padding:12px 13px;text-align:right;border-bottom:1px solid #eaf0f4;font-size:12px;vertical-align:middle}th{background:#f5f9fb;color:#52657a;font-weight:900;white-space:nowrap}tr:last-child td{border-bottom:0}.status{display:inline-block;padding:5px 9px;border-radius:20px;font-size:11px;font-weight:900}.pending{background:#fff3cf;color:#946200}.confirmed{background:#dff7e9;color:#08734f}.cancelled{background:#ffeaec;color:#b42332}.completed{background:#e8e7ff;color:#5143a6}.actions{display:flex;gap:5px;flex-wrap:wrap}.actions button{padding:7px 9px;font-size:11px}.empty{text-align:center;padding:35px 12px;color:var(--muted);font-size:13px}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid .full{grid-column:1/-1}.note{font-size:12px;color:var(--muted);line-height:1.9}.secretary-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #eaf0f4}.secretary-row:last-child{border:0}
+.login-shell{min-height:100vh;display:grid;place-items:center;padding:18px}.login-card{width:min(100%,430px);padding:28px;background:white;border:1px solid var(--line);border-radius:24px;box-shadow:0 25px 70px #102b4630}.login-card h1{margin:0;color:var(--navy)}.login-card p{color:var(--muted);font-size:13px;margin:5px 0 22px}.login-card .field{margin:13px 0}.login-card button{width:100%;margin-top:10px;padding:13px}.error{color:#b42332;background:#fff0f0;padding:10px;border-radius:10px;font-size:12px;margin-bottom:10px}
+#toast{position:fixed;top:18px;left:18px;z-index:20;max-width:360px;background:#102c43;color:#fff;padding:13px 17px;border-radius:12px;box-shadow:0 12px 35px #12263b33;display:none;font-size:13px;font-weight:800}#toast.show{display:block}
+@media(max-width:680px){.top{align-items:flex-start;padding:16px}.top h1{font-size:17px}.welcome{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr 1fr}.stats .stat:last-child{grid-column:1/-1}.panel{padding:14px}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.wrap{margin-top:16px}.panel-head{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<section id="loginScreen" class="login-shell">
+ <form id="loginForm" class="login-card">
+  <div class="logo" style="background:linear-gradient(135deg,#12213b,#0c8993);color:white;margin-bottom:14px">♥</div>
+  <h1>موعدي</h1><p>الدخول إلى لوحة الطبيب والسكرتارية</p>
+  <div id="loginError" class="error hidden"></div>
+  <div class="field"><label for="username">اسم المستخدم</label><input id="username" autocomplete="username" required></div>
+  <div class="field"><label for="password">كلمة المرور</label><input id="password" type="password" autocomplete="current-password" required></div>
+  <button id="loginBtn" class="primary" type="submit">تسجيل الدخول</button>
+ </form>
+</section>
+<div id="appScreen" class="hidden">
+<header class="top"><div class="brand"><div class="logo">♥</div><div><h1>موعدي | لوحة الطبيب</h1><p>إدارة المواعيد والدوام والسكرتارية</p></div></div><button id="logoutBtn" class="logout">تسجيل الخروج</button></header>
+<main class="wrap">
+ <section class="welcome"><div><h2 id="welcomeTitle">مرحبًا بك</h2><p id="doctorMeta">جارٍ تحميل بيانات الطبيب...</p></div><span id="roleBadge" class="role">حساب الطبيب</span></section>
+ <section class="stats"><div class="stat"><span>إجمالي المواعيد</span><strong id="totalCount">0</strong></div><div class="stat"><span>بانتظار التأكيد</span><strong id="pendingCount">0</strong></div><div class="stat"><span>مواعيد اليوم</span><strong id="todayCount">0</strong></div></section>
+ <nav class="tabs"><button class="tab active" data-tab="appointments">📅 المواعيد</button><button class="tab" data-tab="schedules" id="schedulesTab">🕒 دوام الطبيب</button><button class="tab" data-tab="secretaries" id="secretariesTab">👥 السكرتارية</button></nav>
+ <section id="tab-appointments" class="panel">
+  <div class="panel-head"><div><h3>مواعيد المرضى</h3><div class="sub">يمكن للطبيب والسكرتير إدارة مواعيد هذا الطبيب فقط.</div></div><button id="refreshAppointments" class="secondary">↻ تحديث</button></div>
+  <div class="filters"><div class="field"><label for="dateFilter">تاريخ الموعد</label><input id="dateFilter" type="date"></div><div class="field"><label for="statusFilter">الحالة</label><select id="statusFilter"><option value="">كل الحالات</option><option value="pending">بانتظار التأكيد</option><option value="confirmed">مؤكد</option><option value="completed">مكتمل</option><option value="cancelled">ملغي</option><option value="no_show">لم يحضر</option></select></div><button id="clearFilters" class="secondary">مسح التصفية</button></div>
+  <div class="table-wrap"><table><thead><tr><th>المريض</th><th>الهاتف</th><th>الخدمة</th><th>التاريخ</th><th>الوقت</th><th>الحالة</th><th>الإجراءات</th></tr></thead><tbody id="appointmentsBody"><tr><td colspan="7" class="empty">جارٍ التحميل...</td></tr></tbody></table></div>
+ </section>
+ <section id="tab-schedules" class="panel hidden">
+  <div class="panel-head"><div><h3>دوام الطبيب</h3><div class="sub">إضافة فترات الدوام وتعديلها أو إيقافها.</div></div><button id="refreshSchedules" class="secondary">↻ تحديث الدوام</button></div>
+  <form id="scheduleForm" class="form-grid">
+   <input id="scheduleId" type="hidden">
+   <div class="field"><label for="scheduleDay">اليوم</label><select id="scheduleDay" required><option value="">اختر اليوم</option><option value="6">السبت</option><option value="0">الأحد</option><option value="1">الإثنين</option><option value="2">الثلاثاء</option><option value="3">الأربعاء</option><option value="4">الخميس</option><option value="5">الجمعة</option></select></div>
+   <div class="field"><label for="scheduleDuration">مدة الموعد</label><select id="scheduleDuration"><option value="15">15 دقيقة</option><option value="20">20 دقيقة</option><option value="30" selected>30 دقيقة</option><option value="45">45 دقيقة</option><option value="60">60 دقيقة</option></select></div>
+   <div class="field"><label for="scheduleStart">من الساعة</label><input id="scheduleStart" type="time" required></div>
+   <div class="field"><label for="scheduleEnd">إلى الساعة</label><input id="scheduleEnd" type="time" required></div>
+   <div class="field full"><label><input id="scheduleActive" type="checkbox" checked> فترة الدوام نشطة</label></div>
+   <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="primary" type="submit" id="saveScheduleBtn">حفظ الدوام</button><button class="secondary" type="button" id="resetSchedule">مسح الحقول</button></div>
+  </form>
+  <div id="schedulesList" style="margin-top:18px"></div>
+ </section>
+ <section id="tab-secretaries" class="panel hidden">
+  <div class="panel-head"><div><h3>حسابات السكرتارية</h3><div class="sub">هذه الصلاحية للطبيب فقط، والسكرتير لا يستطيع إنشاء حسابات أخرى.</div></div></div>
+  <form id="secretaryForm" class="form-grid">
+   <div class="field"><label for="secretaryName">اسم السكرتير</label><input id="secretaryName" required></div>
+   <div class="field"><label for="secretaryPhone">الهاتف (اختياري)</label><input id="secretaryPhone" inputmode="tel"></div>
+   <div class="field"><label for="secretaryUsername">اسم المستخدم</label><input id="secretaryUsername" required autocomplete="off"></div>
+   <div class="field"><label for="secretaryPassword">كلمة المرور (8 أحرف على الأقل)</label><input id="secretaryPassword" type="password" minlength="8" required autocomplete="new-password"></div>
+   <div class="full"><button id="createSecretaryBtn" class="primary" type="submit">إنشاء حساب السكرتير</button></div>
+  </form>
+  <div id="secretariesList" style="margin-top:20px"></div>
+ </section>
+</main>
+</div>
+<div id="toast"></div>
+<script>
+"use strict";
+const API="/api",TOKEN_KEY="medical_booking_token",REFRESH_KEY="medical_booking_refresh_token",USER_KEY="medical_booking_user";
+const $=id=>document.getElementById(id);
+let profile=null,appointments=[],schedules=[],secretaries=[];
+const esc=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+function token(){return localStorage.getItem(TOKEN_KEY)||""}
+function user(){try{return JSON.parse(localStorage.getItem(USER_KEY)||"null")}catch{return null}}
+function notify(message,error=false){const t=$("toast");t.textContent=message;t.style.background=error?"#b42332":"#102c43";t.classList.add("show");setTimeout(()=>t.classList.remove("show"),3200)}
+async function api(path,options={}){const headers={...(options.headers||{})};if(options.body&&!headers["Content-Type"])headers["Content-Type"]="application/json";if(token())headers.Authorization="Bearer "+token();const r=await fetch(API+path,{...options,headers});let d={};try{d=await r.json()}catch{}if(!r.ok){const e=new Error(d.error||d.message||"حدث خطأ في الطلب.");e.status=r.status;throw e}return d}
+function saveAuth(d){if(d.token)localStorage.setItem(TOKEN_KEY,d.token);if(d.refresh_token)localStorage.setItem(REFRESH_KEY,d.refresh_token);if(d.user)localStorage.setItem(USER_KEY,JSON.stringify(d.user))}
+function clearAuth(){[TOKEN_KEY,REFRESH_KEY,USER_KEY].forEach(k=>localStorage.removeItem(k))}
+function showLogin(){ $("appScreen").classList.add("hidden");$("loginScreen").classList.remove("hidden")}
+function showApp(){ $("loginScreen").classList.add("hidden");$("appScreen").classList.remove("hidden")}
+async function doLogin(e){e.preventDefault();$("loginError").classList.add("hidden");$("loginBtn").disabled=true;try{const d=await api("/staff/login",{method:"POST",body:JSON.stringify({username:$("username").value.trim(),password:$("password").value})});saveAuth(d);if(!["doctor","secretary"].includes(d.user?.role)){if(d.user?.role==="admin"){location.href="/dashboard.html";return}throw new Error("هذا الحساب ليس حساب طبيب أو سكرتير.")}await boot()}catch(e){$("loginError").textContent=e.message;$("loginError").classList.remove("hidden");clearAuth()}finally{$("loginBtn").disabled=false}}
+async function boot(){try{const d=await api("/doctor/me");profile=d.profile;if(!profile)throw new Error("تعذر قراءة بيانات الطبيب.");showApp();$("welcomeTitle").textContent="مرحبًا، "+(profile.staff_name||profile.doctor_name);$("doctorMeta").textContent=(profile.doctor_name||"الطبيب")+" · "+(profile.specialty||"")+" · "+(profile.area||"");$("roleBadge").textContent=profile.role==="doctor"?"حساب الطبيب":"حساب السكرتير";const isDoctor=profile.role==="doctor";$("schedulesTab").classList.toggle("hidden",!isDoctor);$("secretariesTab").classList.toggle("hidden",!isDoctor);if(!isDoctor&&["schedules","secretaries"].includes(location.hash.slice(1)))activateTab("appointments");await loadAppointments()}catch(e){if(e.status===401||e.status===403){clearAuth();showLogin()}else{showLogin();$("loginError").textContent=e.message;$("loginError").classList.remove("hidden")}}}
+function activateTab(name){if((name==="schedules"||name==="secretaries")&&profile?.role!=="doctor")name="appointments";document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));["appointments","schedules","secretaries"].forEach(t=>$("tab-"+t).classList.toggle("hidden",t!==name));if(name==="appointments")loadAppointments();if(name==="schedules")loadSchedules();if(name==="secretaries")loadSecretaries()}
+function statusText(s){return ({pending:"بانتظار التأكيد",confirmed:"مؤكد",cancelled:"ملغي",completed:"مكتمل",no_show:"لم يحضر"})[s]||s||"—"}
+function statusClass(s){return ({pending:"pending",confirmed:"confirmed",cancelled:"cancelled",completed:"completed",no_show:"cancelled"})[s]||"pending"}
+function filteredAppointments(){const date=$("dateFilter").value,status=$("statusFilter").value;return appointments.filter(a=>(!date||String(a.appointment_date).slice(0,10)===date)&&(!status||a.status===status))}
+async function loadAppointments(){try{const d=await api("/doctor/appointments");appointments=Array.isArray(d.appointments)?d.appointments:[];const today=new Date().toLocaleDateString("en-CA");$("totalCount").textContent=appointments.length;$("pendingCount").textContent=appointments.filter(a=>a.status==="pending").length;$("todayCount").textContent=appointments.filter(a=>String(a.appointment_date).slice(0,10)===today).length;renderAppointments()}catch(e){$("appointmentsBody").innerHTML='<tr><td colspan="7" class="empty">'+esc(e.message)+'</td></tr>';if(e.status===401){clearAuth();showLogin()}}}
+function renderAppointments(){const rows=filteredAppointments();if(!rows.length){$("appointmentsBody").innerHTML='<tr><td colspan="7" class="empty">لا توجد مواعيد مطابقة.</td></tr>';return}$("appointmentsBody").innerHTML=rows.map(a=>'<tr><td><strong>'+esc(a.patient_name||"مريض")+'</strong><div class="sub">'+esc(a.notes||"")+'</div></td><td>'+esc(a.patient_phone||"—")+'</td><td>'+esc(a.service_name||"كشف طبي")+'</td><td>'+esc(String(a.appointment_date||"").slice(0,10))+'</td><td>'+esc(String(a.appointment_time||"").slice(0,5))+'</td><td><span class="status '+statusClass(a.status)+'">'+esc(statusText(a.status))+'</span></td><td><div class="actions"><button class="green" onclick="changeStatus(\''+esc(a.id)+'\',\'confirmed\')">تأكيد</button><button class="danger" onclick="changeStatus(\''+esc(a.id)+'\',\'cancelled\')">إلغاء</button><button class="secondary" onclick="editAppointment(\''+esc(a.id)+'\')">تعديل الوقت</button></div></td></tr>').join("")}
+async function changeStatus(id,status){const reason=status==="cancelled"?(prompt("سبب الإلغاء (اختياري):")||""):null;try{const d=await api("/doctor/appointments/"+encodeURIComponent(id)+"/status",{method:"PATCH",body:JSON.stringify({status,cancellation_reason:reason})});notify(d.message||"تم تحديث الموعد.");await loadAppointments()}catch(e){notify(e.message,true)}}
+async function editAppointment(id){const a=appointments.find(x=>String(x.id)===String(id));if(!a)return;const date=prompt("تاريخ الموعد الجديد (YYYY-MM-DD):",String(a.appointment_date).slice(0,10));if(date===null)return;const time=prompt("وقت الموعد الجديد (HH:MM):",String(a.appointment_time).slice(0,5));if(time===null)return;try{const d=await api("/doctor/appointments/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({appointment_date:date,appointment_time:time})});notify(d.message||"تم تعديل الموعد.");await loadAppointments()}catch(e){notify(e.message,true)}}
+const dayNames=["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+function resetSchedule(){$("scheduleId").value="";$("scheduleDay").value="";$("scheduleStart").value="";$("scheduleEnd").value="";$("scheduleDuration").value="30";$("scheduleActive").checked=true;$("saveScheduleBtn").textContent="حفظ الدوام"}
+async function loadSchedules(){try{const d=await api("/doctor/schedules");schedules=d.schedules||[];renderSchedules()}catch(e){$("schedulesList").textContent=e.message;notify(e.message,true)}}
+function renderSchedules(){if(!schedules.length){$("schedulesList").innerHTML='<div class="empty">لم تتم إضافة فترات دوام بعد.</div>';return}$("schedulesList").innerHTML='<div class="table-wrap"><table><thead><tr><th>اليوم</th><th>من</th><th>إلى</th><th>مدة الموعد</th><th>الحالة</th><th>الإجراءات</th></tr></thead><tbody>'+schedules.map(s=>'<tr><td>'+dayNames[Number(s.day_of_week)]+'</td><td>'+esc(String(s.start_time).slice(0,5))+'</td><td>'+esc(String(s.end_time).slice(0,5))+'</td><td>'+Number(s.slot_duration_minutes)+' دقيقة</td><td>'+ (s.active?'نشط':'متوقف')+'</td><td><div class="actions"><button class="secondary" onclick="editSchedule(\''+esc(s.id)+'\')">تعديل</button><button class="danger" onclick="toggleSchedule(\''+esc(s.id)+'\','+(!s.active)+')">'+(s.active?'إيقاف':'تفعيل')+'</button></div></td></tr>').join("")+'</tbody></table></div>'}
+function editSchedule(id){const s=schedules.find(x=>String(x.id)===String(id));if(!s)return;$("scheduleId").value=s.id;$("scheduleDay").value=s.day_of_week;$("scheduleStart").value=String(s.start_time).slice(0,5);$("scheduleEnd").value=String(s.end_time).slice(0,5);$("scheduleDuration").value=s.slot_duration_minutes;$("scheduleActive").checked=s.active!==false;$("saveScheduleBtn").textContent="حفظ التعديلات";window.scrollTo({top:$("tab-schedules").offsetTop,behavior:"smooth"})}
+async function saveSchedule(e){e.preventDefault();const id=$("scheduleId").value;const payload={day_of_week:Number($("scheduleDay").value),start_time:$("scheduleStart").value,end_time:$("scheduleEnd").value,slot_duration_minutes:Number($("scheduleDuration").value),active:$("scheduleActive").checked};try{const d=await api(id?"/doctor/schedules/"+encodeURIComponent(id):"/doctor/schedules",{method:id?"PUT":"POST",body:JSON.stringify(payload)});notify(d.message||"تم حفظ الدوام.");resetSchedule();await loadSchedules()}catch(e){notify(e.message,true)}}
+async function toggleSchedule(id,active){try{const d=await api("/doctor/schedules/"+encodeURIComponent(id)+"/status",{method:"PATCH",body:JSON.stringify({active})});notify(d.message||"تم تحديث الدوام.");await loadSchedules()}catch(e){notify(e.message,true)}}
+async function loadSecretaries(){try{const d=await api("/doctor/secretaries");secretaries=d.secretaries||[];renderSecretaries()}catch(e){$("secretariesList").textContent=e.message;notify(e.message,true)}}
+function renderSecretaries(){if(!secretaries.length){$("secretariesList").innerHTML='<div class="empty">لا توجد حسابات سكرتارية. يمكنك إنشاء أول حساب من النموذج.</div>';return}$("secretariesList").innerHTML=secretaries.map(s=>'<div class="secretary-row"><div><strong>'+esc(s.full_name)+'</strong><div class="sub">اسم المستخدم: '+esc(s.username)+' · '+(s.active?'نشط':'معطل')+'</div></div><button class="'+(s.active?'danger':'green')+'" onclick="toggleSecretary(\''+esc(s.id)+'\','+(!s.active)+')">'+(s.active?'تعطيل':'تفعيل')+'</button></div>').join("")}
+async function createSecretary(e){e.preventDefault();$("createSecretaryBtn").disabled=true;try{const d=await api("/doctor/secretaries",{method:"POST",body:JSON.stringify({full_name:$("secretaryName").value.trim(),phone:$("secretaryPhone").value.trim(),username:$("secretaryUsername").value.trim(),password:$("secretaryPassword").value})});notify(d.message||"تم إنشاء الحساب.");$("secretaryForm").reset();await loadSecretaries()}catch(e){notify(e.message,true)}finally{$("createSecretaryBtn").disabled=false}}
+async function toggleSecretary(id,active){try{const d=await api("/doctor/secretaries/"+encodeURIComponent(id)+"/status",{method:"PATCH",body:JSON.stringify({active})});notify(d.message||"تم تحديث الحساب.");await loadSecretaries()}catch(e){notify(e.message,true)}}
+async function logout(){try{if(token())await api("/logout",{method:"POST"})}catch{}clearAuth();showLogin()}
+$("loginForm").addEventListener("submit",doLogin);$("logoutBtn").addEventListener("click",logout);$("refreshAppointments").addEventListener("click",loadAppointments);$("dateFilter").addEventListener("change",renderAppointments);$("statusFilter").addEventListener("change",renderAppointments);$("clearFilters").addEventListener("click",()=>{$("dateFilter").value="";$("statusFilter").value="";renderAppointments()});$("scheduleForm").addEventListener("submit",saveSchedule);$("resetSchedule").addEventListener("click",resetSchedule);$("refreshSchedules").addEventListener("click",loadSchedules);$("secretaryForm").addEventListener("submit",createSecretary);document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>activateTab(b.dataset.tab)));
+if(token()){boot()}else{showLogin()}
+</script>
+</body>
+</html>
