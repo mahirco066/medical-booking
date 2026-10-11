@@ -223,10 +223,10 @@ async function main() {
   });
   expectStatus(disabledDoctorLogin, 403, "Disabled doctor cannot log in");
 
-  const disabledSecretaryLogin = await request("/api/staff/login", {
+  const disabledSecretaryLoginAfterDoctorDisable = await request("/api/staff/login", {
     method: "POST", body: { username: `sec_a_${suffix}`, password: "TestSecretaryPass123" }
   });
-  expectStatus(disabledSecretaryLogin, 403, "Secretary cannot log in when linked doctor is disabled");
+  expectStatus(disabledSecretaryLoginAfterDoctorDisable, 403, "Secretary cannot log in when linked doctor is disabled");
 
   const disabledDoctorExistingSession = await request("/api/doctor/appointments", { token: doctorAUser.token });
   expectStatus(disabledDoctorExistingSession, 403, "Existing doctor session loses access when doctor is disabled");
