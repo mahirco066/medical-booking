@@ -166,6 +166,7 @@ async function initDatabase() {
       user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
       full_name TEXT NOT NULL,
       phone TEXT,
+      whatsapp_phone TEXT,
       email TEXT,
       date_of_birth DATE,
       gender TEXT,
@@ -184,6 +185,7 @@ async function initDatabase() {
       full_name TEXT NOT NULL DEFAULT 'موظف',
       role TEXT NOT NULL DEFAULT 'staff',
       phone TEXT,
+      whatsapp_phone TEXT,
       email TEXT,
       active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -332,6 +334,7 @@ async function initDatabase() {
 
     ["patients", "user_id", "UUID"],
     ["patients", "phone", "TEXT"],
+    ["patients", "whatsapp_phone", "TEXT"],
     ["patients", "email", "TEXT"],
     ["patients", "date_of_birth", "DATE"],
     ["patients", "gender", "TEXT"],
@@ -345,6 +348,7 @@ async function initDatabase() {
     ["staff_users", "role", "TEXT NOT NULL DEFAULT 'staff'"],
     ["staff_users", "doctor_id", "UUID REFERENCES doctors(id) ON DELETE CASCADE"],
     ["staff_users", "phone", "TEXT"],
+    ["staff_users", "whatsapp_phone", "TEXT"],
     ["staff_users", "email", "TEXT"],
     ["staff_users", "active", "BOOLEAN NOT NULL DEFAULT TRUE"],
     ["staff_users", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
@@ -725,12 +729,14 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
     const username = normalizeUsername(req.body.username);
     const fullName = clean(req.body.full_name);
     const phone = clean(req.body.phone);
+    const whatsappPhone = clean(req.body.whatsapp_phone);
     const email = clean(req.body.email) || null;
     const password = String(req.body.password || "");
 
     if (!username) return jsonError(res, 400, "اسم المستخدم مطلوب.");
     if (!fullName) return jsonError(res, 400, "الاسم الكامل مطلوب.");
     if (!phone) return jsonError(res, 400, "رقم الهاتف مطلوب.");
+    if (!whatsappPhone) return jsonError(res, 400, "رقم WhatsApp مطلوب.");
     if (password.length < 6) {
       return jsonError(res, 400, "كلمة المرور يجب ألا تقل عن 6 أحرف.");
     }
@@ -765,8 +771,8 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
 
     await pool.query(
       `INSERT INTO users
-      (id, username, password_hash, password_salt, full_name, phone, email, role, active)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'patient',TRUE)`,
+      (id, username, password_hash, password_salt, full_name, phone, whatsapp_phone, email, role, active)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'patient',TRUE)`,
       [
         userId,
         username,
@@ -774,15 +780,16 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
         passwordSalt,
         fullName,
         phone,
+        whatsappPhone,
         email
       ]
     );
 
     await pool.query(
       `INSERT INTO patients
-      (id, user_id, username, full_name, phone, email, active)
-      VALUES ($1,$2,$3,$4,$5,$6,TRUE)`,
-      [patientId, userId, username, fullName, phone, email]
+      (id, user_id, username, full_name, phone, whatsapp_phone, email, active)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)`,
+      [patientId, userId, username, fullName, phone, whatsappPhone, email]
     );
 
     const tokens = await createSession(null, userId, 30);
@@ -797,6 +804,7 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
         username,
         full_name: fullName,
         phone,
+        whatsapp_phone: whatsappPhone,
         email,
         role: "patient"
       },
@@ -805,6 +813,7 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
         user_id: userId,
         full_name: fullName,
         phone,
+        whatsapp_phone: whatsappPhone,
         email
       }
     });
@@ -961,6 +970,7 @@ app.get("/api/patient/me", requireAuth, async (req, res) => {
         p.username,
         p.full_name,
         p.phone,
+        p.whatsapp_phone,
         p.email,
         p.date_of_birth,
         p.gender,
@@ -983,6 +993,21 @@ app.get("/api/patient/me", requireAuth, async (req, res) => {
     console.error("Patient profile error:", error);
     return jsonError(res, 500, "تعذر تحميل بيانات الحساب.");
   }
+});
+app.patch("/api/patient/contact", requireAuth, async (req, res) => {
+  try {
+    if (req.authUser.type !== "patient") return jsonError(res, 403, "هذا المسار مخصص للمرضى.");
+    const phone = clean(req.body.phone || "");
+    const whatsappPhone = clean(req.body.whatsapp_phone || "");
+    if (!phone || !whatsappPhone) return jsonError(res, 400, "رقم الهاتف ورقم WhatsApp مطلوبان.");
+    await pool.query("BEGIN");
+    try {
+      await pool.query("UPDATE users SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE id=$3 AND role='patient'", [phone, whatsappPhone, req.authUser.id]);
+      await pool.query("UPDATE patients SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE user_id=$3", [phone, whatsappPhone, req.authUser.id]);
+      await pool.query("COMMIT");
+    } catch (error) { await pool.query("ROLLBACK"); throw error; }
+    return jsonOk(res, { message: "تم تحديث أرقام التواصل بنجاح.", phone, whatsapp_phone: whatsappPhone });
+  } catch (error) { console.error("Update patient contacts error:", error); return jsonError(res, 500, "تعذر تحديث أرقام التواصل."); }
 });
 app.post("/api/staff/login", async (req, res) => {
   try {
@@ -2244,10 +2269,22 @@ app.delete("/api/admin/services/:id", requireAdmin, async (req, res) => {
 /* DOCTOR AND SECRETARY PORTAL */
 app.get("/api/doctor/me", requireDoctorOrSecretary, async (req, res) => {
   try {
-    const r = await pool.query("SELECT su.id AS staff_id,su.username,su.full_name AS staff_name,su.role,su.doctor_id,d.full_name AS doctor_name,d.specialty,d.area FROM staff_users su JOIN doctors d ON d.id=su.doctor_id WHERE su.id=$1 LIMIT 1", [req.authUser.id]);
+    const r = await pool.query("SELECT su.id AS staff_id,su.username,su.full_name AS staff_name,su.role,su.doctor_id,su.phone,su.whatsapp_phone,d.full_name AS doctor_name,d.specialty,d.area FROM staff_users su JOIN doctors d ON d.id=su.doctor_id WHERE su.id=$1 LIMIT 1", [req.authUser.id]);
     if (!r.rowCount) return jsonError(res, 404, "بيانات الطبيب غير موجودة.");
     return jsonOk(res, { profile: r.rows[0] });
   } catch (e) { console.error("Doctor portal profile error:",e); return jsonError(res,500,"تعذر تحميل بيانات الحساب."); }
+});
+
+app.patch("/api/doctor/contact", requireDoctorOrSecretary, async (req, res) => {
+  try {
+    const phone = clean(req.body.phone || "");
+    const whatsappPhone = clean(req.body.whatsapp_phone || "");
+    if (!phone || !whatsappPhone) return jsonError(res, 400, "رقم الهاتف ورقم WhatsApp مطلوبان.");
+    const r = await pool.query("UPDATE staff_users SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND role IN ('doctor','secretary') RETURNING id,full_name,role,phone,whatsapp_phone", [phone, whatsappPhone, req.authUser.id, req.authUser.doctor_id]);
+    if (!r.rowCount) return jsonError(res, 404, "لم يتم العثور على حسابك ضمن هذا الطبيب.");
+    if (req.authUser.role === "doctor") await pool.query("UPDATE doctors SET phone=$1,updated_at=NOW() WHERE id=$2", [phone, req.authUser.doctor_id]);
+    return jsonOk(res, { message: "تم حفظ أرقام التواصل بنجاح.", profile: r.rows[0] });
+  } catch (error) { console.error("Update staff contacts error:", error); return jsonError(res, 500, "تعذر حفظ أرقام التواصل."); }
 });
 
 app.get("/api/doctor/appointments", requireDoctorOrSecretary, async (req, res) => {
@@ -2363,11 +2400,11 @@ app.get("/api/doctor/secretaries", requireDoctor, async (req,res)=>{
 });
 app.post("/api/doctor/secretaries", requireDoctor, async (req,res)=>{
   try{
-    const fullName=clean(req.body.full_name||""),username=normalizeUsername(req.body.username),password=String(req.body.password||""),phone=clean(req.body.phone||"")||null;
+    const fullName=clean(req.body.full_name||""),username=normalizeUsername(req.body.username),password=String(req.body.password||""),phone=clean(req.body.phone||"")||null,whatsappPhone=clean(req.body.whatsapp_phone||"")||null;
     if(!fullName||!username||!password)return jsonError(res,400,"الاسم واسم المستخدم وكلمة المرور مطلوبة.");
     if(password.length<8)return jsonError(res,400,"يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.");
     const h=await hashPassword(password),passwordHash=`${h.salt}:${h.hash}`;
-    const r=await pool.query("INSERT INTO staff_users (id,username,password_hash,full_name,role,doctor_id,phone,active) VALUES ($1,$2,$3,$4,'secretary',$5,$6,TRUE) RETURNING id,username,full_name,role,doctor_id,phone,active,created_at",[makeId(),username,passwordHash,fullName,req.authUser.doctor_id,phone]);
+    const r=await pool.query("INSERT INTO staff_users (id,username,password_hash,full_name,role,doctor_id,phone,whatsapp_phone,active) VALUES ($1,$2,$3,$4,'secretary',$5,$6,$7,TRUE) RETURNING id,username,full_name,role,doctor_id,phone,whatsapp_phone,active,created_at",[makeId(),username,passwordHash,fullName,req.authUser.doctor_id,phone,whatsappPhone]);
     return jsonOk(res,{message:"تم إنشاء حساب السكرتير.",secretary:r.rows[0]});
   }catch(e){if(e.code==="23505")return jsonError(res,409,"اسم المستخدم مستخدم بالفعل.");console.error("Create secretary error:",e);return jsonError(res,500,"تعذر إنشاء حساب السكرتير.");}
 });
