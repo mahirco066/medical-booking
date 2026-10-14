@@ -435,6 +435,45 @@ async function main() {
   assert.ok(new Date(patientReminderSms.scheduled_at).getTime() > Date.now(), "24-hour reminder should be scheduled in the future");
   assert.equal(patientReminderSms.payload.appointment_date, date, "Reminder payload should preserve the appointment date");
 
+  // Patients who leave both notification consent boxes unchecked must not get
+  // patient-directed messages queued, while booking itself remains available.
+  const optOutUsername = `optout_patient_${suffix}`;
+  const optOutRegistration = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: optOutUsername,
+      full_name: "Opt-out Test Patient",
+      phone: `0000005${suffix.slice(0, 2)}`,
+      whatsapp_phone: `0000006${suffix.slice(0, 2)}`,
+      password: "OptOutPatientPass123"
+    }
+  });
+  expectStatus(optOutRegistration, 200, "Register patient without notification consent");
+  const optOutBooking = await request("/api/appointments", {
+    token: optOutRegistration.data.token,
+    method: "POST",
+    body: { service_id: serviceId, doctor_id: doctorA.id, appointment_date: date, appointment_time: "12:00" }
+  });
+  expectStatus(optOutBooking, 200, "Patient can book without opting into notifications");
+  const optOutAppointment = await pool.query(
+    "SELECT id FROM appointments WHERE patient_id=(SELECT id FROM patients WHERE username=$1) AND doctor_id=$2 AND appointment_date=$3::date AND appointment_time=$4::time LIMIT 1",
+    [optOutUsername, doctorA.id, date, "12:00"]
+  );
+  assert.equal(optOutAppointment.rowCount, 1, "Opt-out patient's appointment should be saved");
+  const optOutQueued = await pool.query(
+    "SELECT channel,recipient_role FROM notification_outbox WHERE appointment_id=$1",
+    [optOutAppointment.rows[0].id]
+  );
+  assert.equal(
+    optOutQueued.rows.some(row => row.recipient_role === "patient" && ["sms", "whatsapp"].includes(row.channel)),
+    false,
+    "An opt-out patient must not receive SMS or WhatsApp notifications queued"
+  );
+  assert.ok(
+    optOutQueued.rows.some(row => row.recipient_role === "doctor"),
+    "Opting out of patient notifications must not suppress the doctor's booking alert"
+  );
+
   const disableSchedule = await request(`/api/doctor/schedules/${scheduleForDate.data.schedule.id}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { active: false }
   });
