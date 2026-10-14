@@ -1082,40 +1082,44 @@ app.post("/api/login", async (req, res) => {
       return jsonError(res, 403, "هذا الحساب غير مفعل.");
     }
 
-    // Newer accounts store the salt separately. Older accounts may
-    // store both values as "salt:hash" in password_hash.
-    const passwordValid = user.password_salt
-      ? await new Promise((resolve, reject) => {
-          crypto.scrypt(
-            password,
-            user.password_salt,
-            64,
-            (error, derivedKey) => {
-              if (error) return reject(error);
+    // Support both historical "salt:hash" values and newer records
+    // with a separate password_salt column. Prefer the explicit combined
+    // format when present, even if a migration left password_salt populated.
+    const storedPasswordHash = String(user.password_hash || "");
+    const passwordValid = storedPasswordHash.includes(":")
+      ? await verifyPassword(password, storedPasswordHash)
+      : user.password_salt
+        ? await new Promise((resolve, reject) => {
+            crypto.scrypt(
+              password,
+              user.password_salt,
+              64,
+              (error, derivedKey) => {
+                if (error) return reject(error);
 
-              try {
-                const storedHash = Buffer.from(
-                  user.password_hash,
-                  "hex"
-                );
+                try {
+                  const storedHash = Buffer.from(
+                    storedPasswordHash,
+                    "hex"
+                  );
 
-                if (storedHash.length !== derivedKey.length) {
-                  return resolve(false);
+                  if (storedHash.length !== derivedKey.length) {
+                    return resolve(false);
+                  }
+
+                  resolve(
+                    crypto.timingSafeEqual(
+                      storedHash,
+                      derivedKey
+                    )
+                  );
+                } catch (compareError) {
+                  reject(compareError);
                 }
-
-                resolve(
-                  crypto.timingSafeEqual(
-                    storedHash,
-                    derivedKey
-                  )
-                );
-              } catch (compareError) {
-                reject(compareError);
               }
-            }
-          );
-        })
-      : await verifyPassword(password, user.password_hash);
+            );
+          })
+        : false;
 
     if (!passwordValid) {
       return jsonError(
