@@ -2,7 +2,10 @@
 
 const { Pool } = require("pg");
 const { isNotificationRelevant, isPatientChannelConsented } = require("./notification-utils");
-const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "NOTIFICATION_SEND_ENABLED"];
+const DRY_RUN = String(process.env.NOTIFICATION_DRY_RUN || "").toLowerCase() === "true";
+const required = DRY_RUN
+  ? ["DATABASE_URL"]
+  : ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "NOTIFICATION_SEND_ENABLED"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
   console.error("Notification worker not started. Missing environment variables: " + missing.join(", "));
@@ -12,14 +15,17 @@ const SMS_FROM = process.env.TWILIO_SMS_FROM || "";
 const WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
 // WhatsApp rows are queued by the app, but delivery stays disabled until the
 // worker supports approved template messages and an explicit consent check.
-const ENABLED_CHANNELS = SMS_FROM ? ["sms"] : [];
-if (!ENABLED_CHANNELS.length) {
+const ENABLED_CHANNELS = DRY_RUN ? [] : SMS_FROM ? ["sms"] : [];
+if (!DRY_RUN && !ENABLED_CHANNELS.length) {
   console.error("Notification worker not started. Configure TWILIO_SMS_FROM. WhatsApp delivery is not enabled yet.");
   process.exit(1);
 }
-if (String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
+if (!DRY_RUN && String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
   console.error("Notification worker not started. Set NOTIFICATION_SEND_ENABLED=true only after completing a controlled test.");
   process.exit(1);
+}
+if (DRY_RUN) {
+  console.log("Notification worker started in DRY RUN mode. No messages will be claimed or sent.");
 }
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
@@ -216,8 +222,28 @@ async function tick() {
   }
 }
 
-const timer = setInterval(tick, INTERVAL_MS);
-tick();
+async function dryRunTick() {
+  if (running || stopping) return;
+  running = true;
+  try {
+    // Read aggregate counts only: dry-run never claims, updates, or sends queue items.
+    const result = await pool.query(
+      "SELECT status, channel, COUNT(*)::int AS count FROM notification_outbox GROUP BY status, channel ORDER BY status, channel"
+    );
+    console.log("Notification worker DRY RUN queue summary:", JSON.stringify(result.rows));
+  } catch (error) {
+    console.error("Notification worker DRY RUN check failed:", String(error && error.message ? error.message : error).slice(0, 500));
+  } finally {
+    running = false;
+  }
+}
+
+const timer = setInterval(() => {
+  if (DRY_RUN) dryRunTick();
+  else tick();
+}, DRY_RUN ? 60000 : INTERVAL_MS);
+if (DRY_RUN) dryRunTick();
+else tick();
 
 async function shutdown(signal) {
   if (stopping) return;
