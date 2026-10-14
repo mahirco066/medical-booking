@@ -147,8 +147,10 @@ async function isNotificationStillRelevant(row) {
   const result = await pool.query(
     "SELECT a.status,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
     " COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent," +
-    " COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent" +
-    " FROM appointments a LEFT JOIN patients p ON p.id=a.patient_id WHERE a.id=$1 LIMIT 1",
+    " COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent," +
+    " COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS current_patient_sms_phone," +
+    " COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS current_patient_whatsapp_phone" +
+    " FROM appointments a LEFT JOIN patients p ON p.id=a.patient_id LEFT JOIN users pu ON pu.id=p.user_id WHERE a.id=$1 LIMIT 1",
     [row.appointment_id]
   );
   if (!result.rowCount) return false;
@@ -159,6 +161,16 @@ async function isNotificationStillRelevant(row) {
     appointment.patient_sms_consent,
     appointment.patient_whatsapp_consent
   )) return false;
+  // A patient may change contact numbers after an event was queued. Never send
+  // a stale queued notification to the previous number, even if consent remains on.
+  if (row.recipient_role === "patient") {
+    const currentPhone = row.channel === "sms"
+      ? appointment.current_patient_sms_phone
+      : row.channel === "whatsapp"
+        ? appointment.current_patient_whatsapp_phone
+        : null;
+    if (!currentPhone || String(currentPhone).trim() !== String(row.recipient_phone || "").trim()) return false;
+  }
   return isNotificationRelevant(
     row.event_type,
     appointment.status,
