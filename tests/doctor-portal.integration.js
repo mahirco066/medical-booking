@@ -330,6 +330,8 @@ async function main() {
       full_name: "Concurrency Test Patient A",
       phone: `0000001${suffix.slice(0, 2)}`,
       whatsapp_phone: `0000002${suffix.slice(0, 2)}`,
+      sms_notifications_consent: true,
+      whatsapp_notifications_consent: true,
       password: "RacePatientPass123"
     }
   });
@@ -348,6 +350,8 @@ async function main() {
       full_name: "Concurrency Test Patient B",
       phone: `0000003${suffix.slice(0, 2)}`,
       whatsapp_phone: `0000004${suffix.slice(0, 2)}`,
+      sms_notifications_consent: true,
+      whatsapp_notifications_consent: true,
       password: "RacePatientPass123"
     }
   });
