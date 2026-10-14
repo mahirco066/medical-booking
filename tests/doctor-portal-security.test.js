@@ -79,8 +79,7 @@ test("notification worker rechecks current patient channel consent before delive
   const consentCheck = sectionBetween(worker, "async function isNotificationStillRelevant(row)", "async function processOne()");
   assert.match(consentCheck, /COALESCE\(p\.sms_notifications_consent,FALSE\) AS patient_sms_consent/);
   assert.match(consentCheck, /COALESCE\(p\.whatsapp_notifications_consent,FALSE\) AS patient_whatsapp_consent/);
-  assert.match(consentCheck, /if \(row\.recipient_role === "patient"\)/);
-  assert.match(consentCheck, /if \(consent !== true\) return false/);
+  assert.match(consentCheck, /isPatientChannelConsented\(/);
 
   const delivery = sectionBetween(worker, "async function processOne()", "async function tick()");
   const consentIndex = delivery.indexOf("await isNotificationStillRelevant(row)");
