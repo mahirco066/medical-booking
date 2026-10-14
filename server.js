@@ -980,28 +980,42 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
       );
     });
 
-    await pool.query(
-      `INSERT INTO users
-      (id, username, password_hash, password_salt, full_name, phone, whatsapp_phone, email, role, active)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'patient',TRUE)`,
-      [
-        userId,
-        username,
-        passwordHash,
-        passwordSalt,
-        fullName,
-        phone,
-        whatsappPhone,
-        email
-      ]
-    );
+    // Keep the user and patient profile in sync: if either insert fails,
+    // roll back both records instead of leaving an orphaned user.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO users
+        (id, username, password_hash, password_salt, full_name, phone, whatsapp_phone, email, role, active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'patient',TRUE)`,
+        [
+          userId,
+          username,
+          passwordHash,
+          passwordSalt,
+          fullName,
+          phone,
+          whatsappPhone,
+          email
+        ]
+      );
 
-    await pool.query(
-      `INSERT INTO patients
-      (id, user_id, username, full_name, phone, whatsapp_phone, email, active)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)`,
-      [patientId, userId, username, fullName, phone, whatsappPhone, email]
-    );
+      await client.query(
+        `INSERT INTO patients
+        (id, user_id, username, full_name, phone, whatsapp_phone, email, active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)`,
+        [patientId, userId, username, fullName, phone, whatsappPhone, email]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (rollbackError) {
+        console.error("Patient registration rollback failed:", rollbackError);
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
 
     const tokens = await createSession(null, userId, 30);
 
