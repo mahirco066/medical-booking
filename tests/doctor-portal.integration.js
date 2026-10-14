@@ -347,7 +347,7 @@ async function main() {
   );
   assert.equal(winningAppointment.rowCount, 1, "The winning booking should be persisted for notification checks");
   const queuedNotifications = await pool.query(
-    "SELECT event_type,channel,recipient_role,status,scheduled_at,payload FROM notification_outbox WHERE appointment_id=$1",
+    "SELECT event_type,channel,recipient_role,recipient_phone,status,scheduled_at,payload FROM notification_outbox WHERE appointment_id=$1",
     [winningAppointment.rows[0].id]
   );
   const patientBookedSms = queuedNotifications.rows.find(row =>
