@@ -2,6 +2,7 @@ const express = require("express");
 const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
+const { calculateReminderAt } = require("./notification-utils");
 
 const app = express();
 const PORT = Number(process.env.PORT || 10000);
@@ -142,6 +143,182 @@ async function addColumnIfMissing(table, column, definition) {
    DATABASE INITIALIZATION
 ========================================================= */
 
+async function enqueueAppointmentNotifications(appointmentId, eventType, db = pool) {
+  const allowed = new Set(["booked", "confirmed", "cancelled", "rescheduled"]);
+  if (!allowed.has(eventType)) throw new Error("Unsupported notification event");
+
+  const appointment = await db.query(
+    `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,
+            COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
+            a.appointment_date::text AS appointment_date,a.appointment_time,a.status,a.updated_at,
+            COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS patient_whatsapp,
+            COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent,
+            COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent,
+            d.full_name AS doctor_name,
+            d.phone AS doctor_phone,
+            COALESCE(
+              (SELECT su.whatsapp_phone FROM staff_users su
+                WHERE su.doctor_id=d.id AND su.role='doctor' AND su.active=TRUE
+                ORDER BY su.created_at LIMIT 1),
+              du.whatsapp_phone
+            ) AS doctor_whatsapp
+       FROM appointments a
+       LEFT JOIN patients p ON p.id=a.patient_id
+       LEFT JOIN users pu ON pu.id=p.user_id
+       LEFT JOIN doctors d ON d.id=a.doctor_id
+       LEFT JOIN users du ON du.id=d.user_id
+      WHERE a.id=$1 LIMIT 1`,
+    [appointmentId]
+  );
+  if (!appointment.rowCount) return;
+  const a = appointment.rows[0];
+
+  const contacts = [
+    { role: "patient", sms: a.patient_phone, whatsapp: a.patient_whatsapp, smsConsent: a.patient_sms_consent, whatsappConsent: a.patient_whatsapp_consent },
+    { role: "doctor", sms: a.doctor_phone, whatsapp: a.doctor_whatsapp }
+  ];
+  const secretaries = await db.query(
+    `SELECT phone,whatsapp_phone FROM staff_users
+      WHERE doctor_id=$1 AND role='secretary' AND active=TRUE`,
+    [a.doctor_id]
+  );
+  for (const secretary of secretaries.rows) {
+    contacts.push({ role: "secretary", sms: secretary.phone, whatsapp: secretary.whatsapp_phone });
+  }
+
+  const dateText = String(a.appointment_date).slice(0, 10);
+  const timeText = String(a.appointment_time).slice(0, 5);
+  const payload = {
+    appointment_id: a.id,
+    event_type: eventType,
+    patient_name: a.patient_name,
+    doctor_name: a.doctor_name,
+    appointment_date: dateText,
+    appointment_time: timeText,
+    appointment_status: a.status
+  };
+  const ownsTransaction = db === pool;
+  const client = ownsTransaction ? await pool.connect() : db;
+  try {
+    if (ownsTransaction) await client.query("BEGIN");
+
+    // Do not deliver stale queued messages after a cancellation or time change.
+    // Keep already-sent rows as an audit trail and preserve the new event below.
+    if (eventType === "cancelled") {
+      await client.query(
+        `UPDATE notification_outbox
+            SET status='cancelled',locked_at=NULL,updated_at=NOW()
+          WHERE appointment_id=$1 AND event_type <> 'cancelled'
+            AND status IN ('pending','failed')`,
+        [a.id]
+      );
+    } else if (eventType === "confirmed") {
+      await client.query(
+        `UPDATE notification_outbox
+            SET status='cancelled',locked_at=NULL,updated_at=NOW()
+          WHERE appointment_id=$1 AND event_type='booked'
+            AND status IN ('pending','failed')`,
+        [a.id]
+      );
+    } else if (eventType === "rescheduled") {
+      await client.query(
+        `UPDATE notification_outbox
+            SET status='cancelled',locked_at=NULL,updated_at=NOW()
+          WHERE appointment_id=$1
+            AND event_type IN ('booked','confirmed','rescheduled','reminder_24h')
+            AND status IN ('pending','failed')`,
+        [a.id]
+      );
+    }
+
+    // The update timestamp distinguishes a later reschedule back to a previously
+    // used slot from the old, already-cancelled outbox rows for that same slot.
+    const eventVersion = eventType === "rescheduled"
+      ? new Date(a.updated_at || Date.now()).toISOString()
+      : "";
+
+    for (const contact of contacts) {
+      for (const channel of ["sms", "whatsapp"]) {
+        const phone = channel === "sms" ? contact.sms : contact.whatsapp;
+        if (contact.role === "patient" && !(channel === "sms" ? contact.smsConsent : contact.whatsappConsent)) continue;
+        if (!phone || !String(phone).trim()) continue;
+        const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
+        const key = `appointment:${a.id}:${eventType}:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}:${eventVersion}`;
+        await client.query(
+          `INSERT INTO notification_outbox
+             (id,appointment_id,event_type,channel,recipient_role,recipient_phone,scheduled_at,idempotency_key,payload)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8::jsonb)
+           ON CONFLICT (idempotency_key) DO NOTHING`,
+          [makeId(), a.id, eventType, channel, contact.role, String(phone).trim(), key, JSON.stringify(payload)]
+        );
+      }
+    }
+
+    if (["booked", "confirmed", "rescheduled"].includes(eventType) && ["pending", "confirmed"].includes(a.status)) {
+      // Sudan local time (Africa/Khartoum, UTC+2): store reminder due time as UTC.
+      const reminderAt = calculateReminderAt(dateText, timeText);
+      if (reminderAt.getTime() > Date.now()) {
+        for (const contact of contacts) {
+          for (const channel of ["sms", "whatsapp"]) {
+            const phone = channel === "sms" ? contact.sms : contact.whatsapp;
+            if (contact.role === "patient" && !(channel === "sms" ? contact.smsConsent : contact.whatsappConsent)) continue;
+            if (!phone || !String(phone).trim()) continue;
+            const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
+            const reminderVersion = eventType === "rescheduled" ? eventVersion : "";
+            const key = `appointment:${a.id}:reminder_24h:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}:${reminderVersion}`;
+            await client.query(
+              `INSERT INTO notification_outbox
+                 (id,appointment_id,event_type,channel,recipient_role,recipient_phone,scheduled_at,idempotency_key,payload)
+               VALUES ($1,$2,'reminder_24h',$3,$4,$5,$6,$7,$8::jsonb)
+               ON CONFLICT (idempotency_key) DO NOTHING`,
+              [makeId(), a.id, channel, contact.role, String(phone).trim(), reminderAt.toISOString(), key,
+                JSON.stringify({ ...payload, event_type: "reminder_24h" })]
+            );
+          }
+        }
+      }
+    }
+    if (ownsTransaction) await client.query("COMMIT");
+  } catch (error) {
+    if (ownsTransaction) await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    if (ownsTransaction) client.release();
+  }
+}
+
+async function withDatabaseTransaction(work) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch (rollbackError) {
+      console.error("Transaction rollback failed:", rollbackError);
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Serialize writes targeting the same entity and appointment slot.
+// Transaction-scoped advisory locks are released automatically at COMMIT/ROLLBACK.
+async function lockAppointmentSlot(client, scope, entityId, date, time) {
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+    [String(scope) + ":" + String(entityId), String(date).slice(0, 10) + " " + String(time).slice(0, 5)]
+  );
+}
+
+function appointmentSlotConflict(message) {
+  const error = new Error(message || "Appointment slot is already booked");
+  error.code = "APPOINTMENT_SLOT_CONFLICT";
+  return error;
+}
+
 async function initDatabase() {
   console.log("Initializing Neon database...");
 
@@ -150,8 +327,10 @@ async function initDatabase() {
       id UUID PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      password_salt TEXT,
       full_name TEXT NOT NULL,
       phone TEXT,
+      whatsapp_phone TEXT,
       email TEXT,
       role TEXT NOT NULL DEFAULT 'patient',
       active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -164,8 +343,12 @@ async function initDatabase() {
     CREATE TABLE IF NOT EXISTS patients (
       id UUID PRIMARY KEY,
       user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT,
       full_name TEXT NOT NULL,
       phone TEXT,
+      whatsapp_phone TEXT,
+      sms_notifications_consent BOOLEAN NOT NULL DEFAULT FALSE,
+      whatsapp_notifications_consent BOOLEAN NOT NULL DEFAULT FALSE,
       email TEXT,
       date_of_birth DATE,
       gender TEXT,
@@ -184,6 +367,7 @@ async function initDatabase() {
       full_name TEXT NOT NULL DEFAULT 'موظف',
       role TEXT NOT NULL DEFAULT 'staff',
       phone TEXT,
+      whatsapp_phone TEXT,
       email TEXT,
       active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -222,6 +406,8 @@ async function initDatabase() {
     )
   `);
 
+
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS appointments (
       id UUID PRIMARY KEY,
@@ -238,6 +424,34 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_outbox (
+      id UUID PRIMARY KEY,
+      appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL CHECK (event_type IN ('booked','confirmed','cancelled','rescheduled','reminder_24h')),
+      channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp')),
+      recipient_role TEXT NOT NULL CHECK (recipient_role IN ('patient','doctor','secretary')),
+      recipient_phone TEXT NOT NULL,
+      provider_message_id TEXT,
+      locked_at TIMESTAMPTZ,
+      scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','failed','cancelled')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      last_error TEXT,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_notification_outbox_due
+    ON notification_outbox (scheduled_at, status)
+    WHERE status IN ('pending','failed')
   `);
 
   await pool.query(`
@@ -320,18 +534,23 @@ async function initDatabase() {
 
   const compatibilityColumns = [
     ["users", "password_hash", "TEXT"],
+    ["users", "password_salt", "TEXT"],
     ["users", "username", "TEXT"],
-    ["users", "password_hash", "TEXT"],
     ["users", "full_name", "TEXT"],
     ["users", "role", "TEXT NOT NULL DEFAULT 'patient'"],
     ["users", "active", "BOOLEAN NOT NULL DEFAULT TRUE"],
     ["users", "phone", "TEXT"],
+    ["users", "whatsapp_phone", "TEXT"],
     ["users", "email", "TEXT"],
     ["users", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
     ["users", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
 
     ["patients", "user_id", "UUID"],
+    ["patients", "username", "TEXT"],
     ["patients", "phone", "TEXT"],
+    ["patients", "whatsapp_phone", "TEXT"],
+    ["patients", "sms_notifications_consent", "BOOLEAN NOT NULL DEFAULT FALSE"],
+    ["patients", "whatsapp_notifications_consent", "BOOLEAN NOT NULL DEFAULT FALSE"],
     ["patients", "email", "TEXT"],
     ["patients", "date_of_birth", "DATE"],
     ["patients", "gender", "TEXT"],
@@ -345,6 +564,7 @@ async function initDatabase() {
     ["staff_users", "role", "TEXT NOT NULL DEFAULT 'staff'"],
     ["staff_users", "doctor_id", "UUID REFERENCES doctors(id) ON DELETE CASCADE"],
     ["staff_users", "phone", "TEXT"],
+    ["staff_users", "whatsapp_phone", "TEXT"],
     ["staff_users", "email", "TEXT"],
     ["staff_users", "active", "BOOLEAN NOT NULL DEFAULT TRUE"],
     ["staff_users", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
@@ -413,6 +633,9 @@ async function initDatabase() {
     ["ads", "ends_at", "TIMESTAMPTZ"],
     ["ads", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
     ["ads", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
+
+    ["notification_outbox", "provider_message_id", "TEXT"],
+    ["notification_outbox", "locked_at", "TIMESTAMPTZ"],
 
     ["sessions", "access_token_hash", "TEXT"],
     ["sessions", "refresh_token_hash", "TEXT"],
@@ -511,21 +734,27 @@ async function seedAdmin() {
     process.env.ADMIN_USERNAME || "admin"
   );
 
-  const password =
-    process.env.ADMIN_PASSWORD || "admin123";
-
+  const password = process.env.ADMIN_PASSWORD;
   const fullName =
     process.env.ADMIN_NAME || "مدير منصة موعدي";
-
-  const passwordData = await hashPassword(password);
-
-  const passwordHash =
-    `${passwordData.salt}:${passwordData.hash}`;
 
   const existing = await pool.query(
     "SELECT id FROM staff_users WHERE username=$1 LIMIT 1",
     [username]
   );
+
+  // Never reset an existing administrator password on every server start.
+  // Require an explicitly configured secret only when bootstrapping a new admin.
+  if (!password) {
+    if (existing.rowCount) {
+      console.warn("ADMIN_PASSWORD is not set; preserving the existing admin credentials.");
+      return;
+    }
+    throw new Error("ADMIN_PASSWORD must be set to create the initial admin account.");
+  }
+
+  const passwordData = await hashPassword(password);
+  const passwordHash = `${passwordData.salt}:${passwordData.hash}`;
 
   if (existing.rowCount) {
     await pool.query(
@@ -725,12 +954,16 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
     const username = normalizeUsername(req.body.username);
     const fullName = clean(req.body.full_name);
     const phone = clean(req.body.phone);
+    const whatsappPhone = clean(req.body.whatsapp_phone);
+    const smsConsent = req.body.sms_notifications_consent === true;
+    const whatsappConsent = req.body.whatsapp_notifications_consent === true;
     const email = clean(req.body.email) || null;
     const password = String(req.body.password || "");
 
     if (!username) return jsonError(res, 400, "اسم المستخدم مطلوب.");
     if (!fullName) return jsonError(res, 400, "الاسم الكامل مطلوب.");
     if (!phone) return jsonError(res, 400, "رقم الهاتف مطلوب.");
+    if (!whatsappPhone) return jsonError(res, 400, "رقم WhatsApp مطلوب.");
     if (password.length < 6) {
       return jsonError(res, 400, "كلمة المرور يجب ألا تقل عن 6 أحرف.");
     }
@@ -763,27 +996,42 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
       );
     });
 
-    await pool.query(
-      `INSERT INTO users
-      (id, username, password_hash, password_salt, full_name, phone, email, role, active)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'patient',TRUE)`,
-      [
-        userId,
-        username,
-        passwordHash,
-        passwordSalt,
-        fullName,
-        phone,
-        email
-      ]
-    );
+    // Keep the user and patient profile in sync: if either insert fails,
+    // roll back both records instead of leaving an orphaned user.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO users
+        (id, username, password_hash, password_salt, full_name, phone, whatsapp_phone, email, role, active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'patient',TRUE)`,
+        [
+          userId,
+          username,
+          passwordHash,
+          passwordSalt,
+          fullName,
+          phone,
+          whatsappPhone,
+          email
+        ]
+      );
 
-    await pool.query(
-      `INSERT INTO patients
-      (id, user_id, username, full_name, phone, email, active)
-      VALUES ($1,$2,$3,$4,$5,$6,TRUE)`,
-      [patientId, userId, username, fullName, phone, email]
-    );
+      await client.query(
+        `INSERT INTO patients
+        (id, user_id, username, full_name, phone, whatsapp_phone, sms_notifications_consent, whatsapp_notifications_consent, email, active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE)`,
+        [patientId, userId, username, fullName, phone, whatsappPhone, smsConsent, whatsappConsent, email]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (rollbackError) {
+        console.error("Patient registration rollback failed:", rollbackError);
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
 
     const tokens = await createSession(null, userId, 30);
 
@@ -797,6 +1045,7 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
         username,
         full_name: fullName,
         phone,
+        whatsapp_phone: whatsappPhone,
         email,
         role: "patient"
       },
@@ -805,6 +1054,7 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
         user_id: userId,
         full_name: fullName,
         phone,
+        whatsapp_phone: whatsappPhone,
         email
       }
     });
@@ -862,38 +1112,44 @@ app.post("/api/login", async (req, res) => {
       return jsonError(res, 403, "هذا الحساب غير مفعل.");
     }
 
-    // التحقق من كلمة مرور المريض باستخدام الـ salt
-    // المخزن في password_salt
-    const passwordValid = await new Promise((resolve, reject) => {
-      crypto.scrypt(
-        password,
-        user.password_salt,
-        64,
-        (error, derivedKey) => {
-          if (error) return reject(error);
+    // Support both historical "salt:hash" values and newer records
+    // with a separate password_salt column. Prefer the explicit combined
+    // format when present, even if a migration left password_salt populated.
+    const storedPasswordHash = String(user.password_hash || "");
+    const passwordValid = storedPasswordHash.includes(":")
+      ? await verifyPassword(password, storedPasswordHash)
+      : user.password_salt
+        ? await new Promise((resolve, reject) => {
+            crypto.scrypt(
+              password,
+              user.password_salt,
+              64,
+              (error, derivedKey) => {
+                if (error) return reject(error);
 
-          try {
-            const storedHash = Buffer.from(
-              user.password_hash,
-              "hex"
+                try {
+                  const storedHash = Buffer.from(
+                    storedPasswordHash,
+                    "hex"
+                  );
+
+                  if (storedHash.length !== derivedKey.length) {
+                    return resolve(false);
+                  }
+
+                  resolve(
+                    crypto.timingSafeEqual(
+                      storedHash,
+                      derivedKey
+                    )
+                  );
+                } catch (compareError) {
+                  reject(compareError);
+                }
+              }
             );
-
-            if (storedHash.length !== derivedKey.length) {
-              return resolve(false);
-            }
-
-            resolve(
-              crypto.timingSafeEqual(
-                storedHash,
-                derivedKey
-              )
-            );
-          } catch (compareError) {
-            reject(compareError);
-          }
-        }
-      );
-    });
+          })
+        : false;
 
     if (!passwordValid) {
       return jsonError(
@@ -950,7 +1206,7 @@ app.post("/api/login", async (req, res) => {
 });
 app.get("/api/patient/me", requireAuth, async (req, res) => {
   try {
-    if (!req.user?.id) {
+    if (req.authUser?.type !== "patient" || !req.authUser?.id) {
       return jsonError(res, 401, "جلسة الدخول غير صالحة.");
     }
 
@@ -961,6 +1217,9 @@ app.get("/api/patient/me", requireAuth, async (req, res) => {
         p.username,
         p.full_name,
         p.phone,
+        p.whatsapp_phone,
+        p.sms_notifications_consent,
+        p.whatsapp_notifications_consent,
         p.email,
         p.date_of_birth,
         p.gender,
@@ -969,7 +1228,7 @@ app.get("/api/patient/me", requireAuth, async (req, res) => {
        FROM patients p
        WHERE p.user_id=$1
        LIMIT 1`,
-      [req.user.id]
+      [req.authUser.id]
     );
 
     if (!result.rowCount) {
@@ -983,6 +1242,29 @@ app.get("/api/patient/me", requireAuth, async (req, res) => {
     console.error("Patient profile error:", error);
     return jsonError(res, 500, "تعذر تحميل بيانات الحساب.");
   }
+});
+app.patch("/api/patient/contact", requireAuth, async (req, res) => {
+  try {
+    if (req.authUser.type !== "patient") return jsonError(res, 403, "هذا المسار مخصص للمرضى.");
+    const phone = clean(req.body.phone || "");
+    const whatsappPhone = clean(req.body.whatsapp_phone || "");
+    const smsConsent = req.body.sms_notifications_consent === true;
+    const whatsappConsent = req.body.whatsapp_notifications_consent === true;
+    if (!phone || !whatsappPhone) return jsonError(res, 400, "رقم الهاتف ورقم WhatsApp مطلوبان.");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE users SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE id=$3 AND role='patient'", [phone, whatsappPhone, req.authUser.id]);
+      await client.query("UPDATE patients SET phone=$1,whatsapp_phone=$2,sms_notifications_consent=$3,whatsapp_notifications_consent=$4,updated_at=NOW() WHERE user_id=$5", [phone, whatsappPhone, smsConsent, whatsappConsent, req.authUser.id]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+    return jsonOk(res, { message: "تم تحديث أرقام التواصل بنجاح.", phone, whatsapp_phone: whatsappPhone, sms_notifications_consent: smsConsent, whatsapp_notifications_consent: whatsappConsent });
+  } catch (error) { console.error("Update patient contacts error:", error); return jsonError(res, 500, "تعذر تحديث أرقام التواصل."); }
 });
 app.post("/api/staff/login", async (req, res) => {
   try {
@@ -1318,26 +1600,52 @@ app.post("/api/appointments", requireAuth, async (req, res) => {
       return jsonError(res, 409, "لديك موعد آخر في نفس التاريخ والوقت.");
     }
 
-    const result = await pool.query(
-      "INSERT INTO appointments (id,patient_id,doctor_id,service_id,patient_name,patient_phone,appointment_date,appointment_time,status,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9) RETURNING *",
-      [
-        makeId(),
-        patient.id,
-        doctorId,
-        serviceId,
-        patient.full_name,
-        patient.phone,
-        appointmentDate,
-        appointmentTime,
-        notes
-      ]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      await lockAppointmentSlot(client, "doctor", doctorId, appointmentDate, appointmentTime);
+      await lockAppointmentSlot(client, "patient", patient.id, appointmentDate, appointmentTime);
 
+      // Recheck after acquiring the locks; the earlier availability checks are only a fast preflight.
+      const lockedDoctorConflict = await client.query(
+        "SELECT id FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND status IN ('pending','confirmed') LIMIT 1",
+        [doctorId, appointmentDate, appointmentTime]
+      );
+      if (lockedDoctorConflict.rowCount) {
+        throw appointmentSlotConflict("هذا الموعد محجوز بالفعل للطبيب.");
+      }
+
+      const lockedPatientConflict = await client.query(
+        "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND status IN ('pending','confirmed') LIMIT 1",
+        [patient.id, appointmentDate, appointmentTime]
+      );
+      if (lockedPatientConflict.rowCount) {
+        throw appointmentSlotConflict("لديك موعد آخر في نفس التاريخ والوقت.");
+      }
+
+      const inserted = await client.query(
+        "INSERT INTO appointments (id,patient_id,doctor_id,service_id,patient_name,patient_phone,appointment_date,appointment_time,status,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9) RETURNING *",
+        [
+          makeId(),
+          patient.id,
+          doctorId,
+          serviceId,
+          patient.full_name,
+          patient.phone,
+          appointmentDate,
+          appointmentTime,
+          notes
+        ]
+      );
+      await enqueueAppointmentNotifications(inserted.rows[0].id, "booked", client);
+      return inserted;
+    });
     return jsonOk(res, {
       message: "تم إرسال طلب الحجز بنجاح.",
       appointment: result.rows[0]
     });
   } catch (error) {
+    if (error.code === "APPOINTMENT_SLOT_CONFLICT") {
+      return jsonError(res, 409, error.message);
+    }
     console.error("Create appointment error:", error);
     return jsonError(res, 500, "تعذر إنشاء الموعد.");
   }
@@ -1393,15 +1701,21 @@ app.patch("/api/appointments/:id/confirm", requireAuth, async (req, res) => {
       return jsonError(res, 400, "معرف الموعد غير صحيح.");
     }
 
-    const result = await pool.query(
-      `UPDATE appointments
-       SET status='confirmed',
-           updated_at=NOW()
-       WHERE id=$1
-         AND status='pending'
-       RETURNING *`,
-      [appointmentId]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE appointments
+         SET status='confirmed',
+             updated_at=NOW()
+         WHERE id=$1
+           AND status='pending'
+         RETURNING *`,
+        [appointmentId]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "confirmed", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(
@@ -1410,6 +1724,7 @@ app.patch("/api/appointments/:id/confirm", requireAuth, async (req, res) => {
         "الموعد غير موجود أو تم تغيير حالته مسبقًا."
       );
     }
+
 
     return jsonOk(res, {
       message: "تم تأكيد الموعد بنجاح.",
@@ -1433,15 +1748,21 @@ app.patch("/api/appointments/:id/cancel", requireAuth, async (req, res) => {
       return jsonError(res, 400, "معرف الموعد غير صحيح.");
     }
 
-    const result = await pool.query(
-      `UPDATE appointments
-       SET status = 'cancelled',
-           updated_at = NOW()
-       WHERE id = $1
-         AND status IN ('pending', 'confirmed')
-       RETURNING *`,
-      [appointmentId]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE appointments
+         SET status = 'cancelled',
+             updated_at = NOW()
+         WHERE id = $1
+           AND status IN ('pending', 'confirmed')
+         RETURNING *`,
+        [appointmentId]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "cancelled", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(
@@ -1450,6 +1771,7 @@ app.patch("/api/appointments/:id/cancel", requireAuth, async (req, res) => {
         "الموعد غير موجود أو تم إلغاؤه مسبقًا."
       );
     }
+
 
     return jsonOk(res, {
       message: "تم إلغاء الحجز بنجاح.",
@@ -1488,10 +1810,16 @@ app.patch("/api/my-appointments/:id/cancel", requireAuth, async (req, res) => {
     const reason =
       clean(req.body.reason || req.body.cancellation_reason) || null;
 
-    const result = await pool.query(
-      "UPDATE appointments a SET status='cancelled',cancellation_reason=$1,updated_at=NOW() FROM patients p WHERE a.id=$2 AND a.patient_id=p.id AND p.user_id=$3 AND a.status IN ('pending','confirmed') RETURNING a.*",
-      [reason, req.params.id, req.authUser.id]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments a SET status='cancelled',cancellation_reason=$1,updated_at=NOW() FROM patients p WHERE a.id=$2 AND a.patient_id=p.id AND p.user_id=$3 AND a.status IN ('pending','confirmed') RETURNING a.*",
+        [reason, req.params.id, req.authUser.id]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "cancelled", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(res, 404, "الموعد غير موجود أو لا يمكن إلغاؤه.");
@@ -2244,10 +2572,22 @@ app.delete("/api/admin/services/:id", requireAdmin, async (req, res) => {
 /* DOCTOR AND SECRETARY PORTAL */
 app.get("/api/doctor/me", requireDoctorOrSecretary, async (req, res) => {
   try {
-    const r = await pool.query("SELECT su.id AS staff_id,su.username,su.full_name AS staff_name,su.role,su.doctor_id,d.full_name AS doctor_name,d.specialty,d.area FROM staff_users su JOIN doctors d ON d.id=su.doctor_id WHERE su.id=$1 LIMIT 1", [req.authUser.id]);
+    const r = await pool.query("SELECT su.id AS staff_id,su.username,su.full_name AS staff_name,su.role,su.doctor_id,su.phone,su.whatsapp_phone,d.full_name AS doctor_name,d.specialty,d.area FROM staff_users su JOIN doctors d ON d.id=su.doctor_id WHERE su.id=$1 LIMIT 1", [req.authUser.id]);
     if (!r.rowCount) return jsonError(res, 404, "بيانات الطبيب غير موجودة.");
     return jsonOk(res, { profile: r.rows[0] });
   } catch (e) { console.error("Doctor portal profile error:",e); return jsonError(res,500,"تعذر تحميل بيانات الحساب."); }
+});
+
+app.patch("/api/doctor/contact", requireDoctorOrSecretary, async (req, res) => {
+  try {
+    const phone = clean(req.body.phone || "");
+    const whatsappPhone = clean(req.body.whatsapp_phone || "");
+    if (!phone || !whatsappPhone) return jsonError(res, 400, "رقم الهاتف ورقم WhatsApp مطلوبان.");
+    const r = await pool.query("UPDATE staff_users SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND role IN ('doctor','secretary') RETURNING id,full_name,role,phone,whatsapp_phone", [phone, whatsappPhone, req.authUser.id, req.authUser.doctor_id]);
+    if (!r.rowCount) return jsonError(res, 404, "لم يتم العثور على حسابك ضمن هذا الطبيب.");
+    if (req.authUser.role === "doctor") await pool.query("UPDATE doctors SET phone=$1,updated_at=NOW() WHERE id=$2", [phone, req.authUser.doctor_id]);
+    return jsonOk(res, { message: "تم حفظ أرقام التواصل بنجاح.", profile: r.rows[0] });
+  } catch (error) { console.error("Update staff contacts error:", error); return jsonError(res, 500, "تعذر حفظ أرقام التواصل."); }
 });
 
 app.get("/api/doctor/appointments", requireDoctorOrSecretary, async (req, res) => {
@@ -2277,10 +2617,16 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
       return jsonError(res,409,"لا يمكن تغيير حالة موعد منتهٍ أو ملغى.");
     }
     const reason=clean(req.body.cancellation_reason||"")||null;
-    const r=await pool.query(
-      "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
-      [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
-    );
+    const r=await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
+      );
+      if (updated.rowCount && (status === "cancelled" || status === "confirmed")) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, status, client);
+      }
+      return updated;
+    });
     if(!r.rowCount)return jsonError(res,409,"تعذر تحديث الموعد؛ ربما تغيرت حالته.");
     return jsonOk(res,{message:"تم تحديث حالة الموعد.",appointment:r.rows[0]});
   }catch(e){console.error("Doctor appointment status error:",e);return jsonError(res,500,"تعذر تحديث حالة الموعد.");}
@@ -2314,13 +2660,42 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
       if(patientConflict.rowCount)return jsonError(res,409,"لدى المريض موعد آخر في التاريخ والوقت المحددين.");
     }
 
-    const r=await pool.query(
-      "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
-      [date,time,req.params.id,req.authUser.doctor_id]
-    );
+    const r=await withDatabaseTransaction(async (client) => {
+      await lockAppointmentSlot(client, "doctor", req.authUser.doctor_id, date, time);
+      if (current.rows[0].patient_id) {
+        await lockAppointmentSlot(client, "patient", current.rows[0].patient_id, date, time);
+      }
+
+      const doctorConflict = await client.query(
+        "SELECT id FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+        [req.authUser.doctor_id,date,time,req.params.id]
+      );
+      if (doctorConflict.rowCount) throw appointmentSlotConflict("هذا الموعد محجوز بالفعل للطبيب.");
+
+      if (current.rows[0].patient_id) {
+        const patientConflict = await client.query(
+          "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+          [current.rows[0].patient_id,date,time,req.params.id]
+        );
+        if (patientConflict.rowCount) throw appointmentSlotConflict("لدى المريض موعد آخر في التاريخ والوقت المحددين.");
+      }
+
+      const updated = await client.query(
+        "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        [date,time,req.params.id,req.authUser.doctor_id]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "rescheduled", client);
+      }
+      return updated;
+    });
     if(!r.rowCount)return jsonError(res,409,"تعذر تعديل الموعد؛ ربما تغيرت حالته.");
     return jsonOk(res,{message:"تم تعديل تاريخ ووقت الموعد.",appointment:r.rows[0]});
-  }catch(e){console.error("Doctor appointment edit error:",e);return jsonError(res,500,"تعذر تعديل تاريخ ووقت الموعد.");}
+  }catch(e){
+    if(e.code==="APPOINTMENT_SLOT_CONFLICT")return jsonError(res,409,e.message);
+    console.error("Doctor appointment edit error:",e);
+    return jsonError(res,500,"تعذر تعديل الموعد.");
+  }
 });
 
 app.get("/api/doctor/schedules", requireDoctor, async (req,res)=>{
@@ -2363,11 +2738,11 @@ app.get("/api/doctor/secretaries", requireDoctor, async (req,res)=>{
 });
 app.post("/api/doctor/secretaries", requireDoctor, async (req,res)=>{
   try{
-    const fullName=clean(req.body.full_name||""),username=normalizeUsername(req.body.username),password=String(req.body.password||""),phone=clean(req.body.phone||"")||null;
+    const fullName=clean(req.body.full_name||""),username=normalizeUsername(req.body.username),password=String(req.body.password||""),phone=clean(req.body.phone||"")||null,whatsappPhone=clean(req.body.whatsapp_phone||"")||null;
     if(!fullName||!username||!password)return jsonError(res,400,"الاسم واسم المستخدم وكلمة المرور مطلوبة.");
     if(password.length<8)return jsonError(res,400,"يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.");
     const h=await hashPassword(password),passwordHash=`${h.salt}:${h.hash}`;
-    const r=await pool.query("INSERT INTO staff_users (id,username,password_hash,full_name,role,doctor_id,phone,active) VALUES ($1,$2,$3,$4,'secretary',$5,$6,TRUE) RETURNING id,username,full_name,role,doctor_id,phone,active,created_at",[makeId(),username,passwordHash,fullName,req.authUser.doctor_id,phone]);
+    const r=await pool.query("INSERT INTO staff_users (id,username,password_hash,full_name,role,doctor_id,phone,whatsapp_phone,active) VALUES ($1,$2,$3,$4,'secretary',$5,$6,$7,TRUE) RETURNING id,username,full_name,role,doctor_id,phone,whatsapp_phone,active,created_at",[makeId(),username,passwordHash,fullName,req.authUser.doctor_id,phone,whatsappPhone]);
     return jsonOk(res,{message:"تم إنشاء حساب السكرتير.",secretary:r.rows[0]});
   }catch(e){if(e.code==="23505")return jsonError(res,409,"اسم المستخدم مستخدم بالفعل.");console.error("Create secretary error:",e);return jsonError(res,500,"تعذر إنشاء حساب السكرتير.");}
 });
@@ -2437,14 +2812,20 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
     const cancellationReason =
       clean(req.body.cancellation_reason) || null;
 
-    const result = await pool.query(
-      "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 RETURNING *",
-      [
-        status,
-        status === "cancelled" ? cancellationReason : null,
-        req.params.id
-      ]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 RETURNING *",
+        [
+          status,
+          status === "cancelled" ? cancellationReason : null,
+          req.params.id
+        ]
+      );
+      if (updated.rowCount && (status === "cancelled" || status === "confirmed")) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, status, client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(res, 404, "الموعد غير موجود.");
@@ -2472,15 +2853,45 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
       return jsonError(res, 400, "وقت الموعد غير صحيح.");
     }
 
-    const result = await pool.query(
-      `UPDATE appointments
-       SET appointment_date = $1::date,
-           appointment_time = $2::time,
-           updated_at = NOW()
-       WHERE id = $3
-       RETURNING *`,
-      [appointmentDate, appointmentTime, req.params.id]
+    const currentResult = await pool.query(
+      "SELECT id,doctor_id,patient_id FROM appointments WHERE id=$1 LIMIT 1",
+      [req.params.id]
     );
+    if (!currentResult.rowCount) return jsonError(res, 404, "الموعد غير موجود.");
+    const current = currentResult.rows[0];
+
+    const result = await withDatabaseTransaction(async (client) => {
+      if (current.doctor_id) {
+        await lockAppointmentSlot(client, "doctor", current.doctor_id, appointmentDate, appointmentTime);
+        const doctorConflict = await client.query(
+          "SELECT id FROM appointments WHERE doctor_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+          [current.doctor_id, appointmentDate, appointmentTime, req.params.id]
+        );
+        if (doctorConflict.rowCount) throw appointmentSlotConflict("هذا الموعد محجوز بالفعل للطبيب.");
+      }
+      if (current.patient_id) {
+        await lockAppointmentSlot(client, "patient", current.patient_id, appointmentDate, appointmentTime);
+        const patientConflict = await client.query(
+          "SELECT id FROM appointments WHERE patient_id=$1 AND appointment_date=$2::date AND appointment_time=$3::time AND id<>$4 AND status IN ('pending','confirmed') LIMIT 1",
+          [current.patient_id, appointmentDate, appointmentTime, req.params.id]
+        );
+        if (patientConflict.rowCount) throw appointmentSlotConflict("لدى المريض موعد آخر في التاريخ والوقت المحددين.");
+      }
+
+      const updated = await client.query(
+        `UPDATE appointments
+         SET appointment_date = $1::date,
+             appointment_time = $2::time,
+             updated_at = NOW()
+         WHERE id = $3
+         RETURNING *`,
+        [appointmentDate, appointmentTime, req.params.id]
+      );
+      if (updated.rowCount) {
+        await enqueueAppointmentNotifications(updated.rows[0].id, "rescheduled", client);
+      }
+      return updated;
+    });
 
     if (!result.rowCount) {
       return jsonError(res, 404, "الموعد غير موجود.");
@@ -2491,6 +2902,7 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
       appointment: result.rows[0]
     });
   } catch (error) {
+    if (error.code === "APPOINTMENT_SLOT_CONFLICT") return jsonError(res, 409, error.message);
     console.error("Edit appointment error:", error);
     return jsonError(res, 500, "تعذر تعديل الموعد.");
   }

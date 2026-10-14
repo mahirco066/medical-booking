@@ -72,3 +72,34 @@ test("secretary interface hides doctor-only tabs", () => {
   assert.match(portal, /classList\.toggle\("hidden",!isDoctor\)/);
   assert.match(portal, /name==="schedules"\|\|name==="secretaries"/);
 });
+
+
+test("notification worker rechecks current patient channel consent before delivery", () => {
+  const worker = fs.readFileSync(path.join(root, "notification-worker.js"), "utf8");
+  const consentCheck = sectionBetween(worker, "async function isNotificationStillRelevant(row)", "async function processOne()");
+  assert.match(consentCheck, /COALESCE\(p\.sms_notifications_consent,FALSE\) AS patient_sms_consent/);
+  assert.match(consentCheck, /COALESCE\(p\.whatsapp_notifications_consent,FALSE\) AS patient_whatsapp_consent/);
+  assert.match(consentCheck, /current_patient_sms_phone/);
+  assert.match(consentCheck, /current_patient_whatsapp_phone/);
+  assert.match(consentCheck, /String\(currentPhone\)\.trim\(\) !== String\(row\.recipient_phone \|\| ""\)\.trim\(\)/);
+  assert.match(consentCheck, /isPatientChannelConsented\(/);
+
+  const delivery = sectionBetween(worker, "async function processOne()", "async function tick()");
+  const consentIndex = delivery.indexOf("await isNotificationStillRelevant(row)");
+  const sendIndex = delivery.indexOf("await sendTwilioMessage(row)");
+  assert.notEqual(consentIndex, -1, "Worker must re-read current appointment and consent state");
+  assert.notEqual(sendIndex, -1, "Worker must have a provider delivery step");
+  assert.ok(consentIndex < sendIndex, "Consent must be rechecked before contacting the messaging provider");
+  assert.match(delivery, /await finish\(row, "cancelled"/);
+});
+
+
+test("notification worker fences stale lease completions", () => {
+  const worker = fs.readFileSync(path.join(root, "notification-worker.js"), "utf8");
+  const claim = sectionBetween(worker, "async function claimOne()", "async function finish(");
+  const finish = sectionBetween(worker, "async function finish(", "async function isNotificationStillRelevant(");
+  assert.match(claim, /RETURNING to_char\(locked_at, 'YYYY-MM-DD HH24:MI:SS\.USOF'\) AS lease_token/);
+  assert.match(claim, /row\.lease_token\s*=\s*lease\.rows\[0\]/);
+  assert.match(finish, /WHERE id=\$1 AND status='processing' AND locked_at=\$8::timestamptz/);
+  assert.match(finish, /row\.lease_token/);
+});
