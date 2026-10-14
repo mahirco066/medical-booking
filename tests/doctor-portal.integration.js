@@ -512,6 +512,30 @@ async function main() {
     "Opting out of patient notifications must not suppress the doctor's booking alert"
   );
 
+  // A patient can later update contact details and revoke notification consent.
+  const updatedPatientContact = await request("/api/patient/contact", {
+    token: patientALogin.data.token,
+    method: "PATCH",
+    body: {
+      phone: "0000007" + suffix.slice(0, 2),
+      whatsapp_phone: "0000008" + suffix.slice(0, 2),
+      sms_notifications_consent: false,
+      whatsapp_notifications_consent: false
+    }
+  });
+  expectStatus(updatedPatientContact, 200, "Patient can update contacts and revoke notification consent");
+  assert.equal(updatedPatientContact.data.sms_notifications_consent, false);
+  assert.equal(updatedPatientContact.data.whatsapp_notifications_consent, false);
+  const persistedPatientContact = await pool.query(
+    "SELECT phone,whatsapp_phone,sms_notifications_consent,whatsapp_notifications_consent FROM patients WHERE username=$1",
+    [patientAUsername]
+  );
+  assert.equal(persistedPatientContact.rowCount, 1, "Updated patient contact profile should exist");
+  assert.equal(persistedPatientContact.rows[0].phone, "0000007" + suffix.slice(0, 2));
+  assert.equal(persistedPatientContact.rows[0].whatsapp_phone, "0000008" + suffix.slice(0, 2));
+  assert.equal(persistedPatientContact.rows[0].sms_notifications_consent, false, "SMS opt-out must persist");
+  assert.equal(persistedPatientContact.rows[0].whatsapp_notifications_consent, false, "WhatsApp opt-out must persist");
+
   const disableSchedule = await request(`/api/doctor/schedules/${scheduleForDate.data.schedule.id}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { active: false }
   });
