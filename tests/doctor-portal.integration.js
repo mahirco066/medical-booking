@@ -285,14 +285,14 @@ async function main() {
   const rollbackUsername = `rollback_patient_${suffix}`;
   await pool.query(`
     CREATE OR REPLACE FUNCTION test_fail_selected_patient_insert() RETURNS trigger
-    LANGUAGE plpgsql AS $
+    LANGUAGE plpgsql AS $$
     BEGIN
       IF NEW.username LIKE 'rollback_patient_%' THEN
         RAISE EXCEPTION 'injected patient insert failure';
       END IF;
       RETURN NEW;
     END;
-    $
+    $$
   `);
   await pool.query(`
     CREATE TRIGGER test_fail_selected_patient_insert_trigger
