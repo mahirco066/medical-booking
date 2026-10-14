@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { calculateReminderAt, isNotificationRelevant } = require("./notification-utils");
+const { calculateReminderAt, isNotificationRelevant, isPatientChannelConsented } = require("./notification-utils");
 
 test("reminder is exactly 24 hours before a Khartoum-local appointment (UTC+2)", () => {
   const reminder = calculateReminderAt("2026-10-20", "15:30");
@@ -44,4 +44,20 @@ test("reschedule and reminder notices require a current active status and same s
 
 test("unknown event types are not relevant", () => {
   assert.equal(isNotificationRelevant("unknown", "pending", "2026-10-20", "15:30", "2026-10-20", "15:30"), false);
+});
+
+
+test("patient SMS and WhatsApp delivery require separate explicit consent", () => {
+  assert.equal(isPatientChannelConsented("patient", "sms", true, false), true);
+  assert.equal(isPatientChannelConsented("patient", "sms", false, true), false);
+  assert.equal(isPatientChannelConsented("patient", "whatsapp", true, false), false);
+  assert.equal(isPatientChannelConsented("patient", "whatsapp", false, true), true);
+  assert.equal(isPatientChannelConsented("patient", "sms", null, null), false);
+  assert.equal(isPatientChannelConsented("patient", "whatsapp", undefined, undefined), false);
+  assert.equal(isPatientChannelConsented("patient", "email", true, true), false);
+});
+
+test("staff booking alerts are not blocked by patient notification consent", () => {
+  assert.equal(isPatientChannelConsented("doctor", "sms", false, false), true);
+  assert.equal(isPatientChannelConsented("secretary", "whatsapp", false, false), true);
 });
