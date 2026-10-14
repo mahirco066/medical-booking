@@ -457,7 +457,7 @@ async function main() {
   expectStatus(optOutBooking, 200, "Patient can book without opting into notifications");
   const optOutAppointment = await pool.query(
     "SELECT id FROM appointments WHERE patient_id=(SELECT id FROM patients WHERE username=$1) AND doctor_id=$2 AND appointment_date=$3::date AND appointment_time=$4::time LIMIT 1",
-    [optOutUsername, doctorA.id, date, "12:00"]
+    [optOutUsername, doctorA.id, date, "11:30"]
   );
   assert.equal(optOutAppointment.rowCount, 1, "Opt-out patient's appointment should be saved");
   const optOutQueued = await pool.query(
