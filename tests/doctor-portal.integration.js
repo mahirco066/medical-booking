@@ -143,6 +143,15 @@ async function main() {
   expectStatus(secretaryConfirmsOwnDoctorAppointment, 200, "Secretary can update appointment status for their own doctor");
   assert.equal(secretaryConfirmsOwnDoctorAppointment.data.appointment.status, "confirmed");
 
+  const confirmedOutbox = await pool.query(
+    "SELECT event_type,status FROM notification_outbox WHERE appointment_id=$1",
+    [appointmentAId]
+  );
+  assert.ok(
+    confirmedOutbox.rows.some(row => row.event_type === "confirmed" && row.status === "pending"),
+    "Confirming an appointment should queue a confirmation notice"
+  );
+
   const secretaryCannotMarkCompleted = await request(`/api/doctor/appointments/${appointmentAId}/status`, {
     token: secretary.token, method: "PATCH", body: { status: "completed" }
   });
