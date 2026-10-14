@@ -1,7 +1,7 @@
 "use strict";
 
 const { Pool } = require("pg");
-const { isNotificationRelevant } = require("./notification-utils");
+const { isNotificationRelevant, isPatientChannelConsented } = require("./notification-utils");
 const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "NOTIFICATION_SEND_ENABLED"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
@@ -151,14 +151,12 @@ async function isNotificationStillRelevant(row) {
   );
   if (!result.rowCount) return false;
   const appointment = result.rows[0];
-  if (row.recipient_role === "patient") {
-    const consent = row.channel === "sms"
-      ? appointment.patient_sms_consent
-      : row.channel === "whatsapp"
-        ? appointment.patient_whatsapp_consent
-        : false;
-    if (consent !== true) return false;
-  }
+  if (!isPatientChannelConsented(
+    row.recipient_role,
+    row.channel,
+    appointment.patient_sms_consent,
+    appointment.patient_whatsapp_consent
+  )) return false;
   return isNotificationRelevant(
     row.event_type,
     appointment.status,
