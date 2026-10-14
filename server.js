@@ -152,6 +152,8 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
             COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
             a.appointment_date::text AS appointment_date,a.appointment_time,a.status,a.updated_at,
             COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS patient_whatsapp,
+            COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent,
+            COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent,
             d.full_name AS doctor_name,
             d.phone AS doctor_phone,
             COALESCE(
@@ -172,7 +174,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
   const a = appointment.rows[0];
 
   const contacts = [
-    { role: "patient", sms: a.patient_phone, whatsapp: a.patient_whatsapp },
+    { role: "patient", sms: a.patient_phone, whatsapp: a.patient_whatsapp, smsConsent: a.patient_sms_consent, whatsappConsent: a.patient_whatsapp_consent },
     { role: "doctor", sms: a.doctor_phone, whatsapp: a.doctor_whatsapp }
   ];
   const secretaries = await db.query(
@@ -238,6 +240,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
     for (const contact of contacts) {
       for (const channel of ["sms", "whatsapp"]) {
         const phone = channel === "sms" ? contact.sms : contact.whatsapp;
+        if (contact.role === "patient" && !(channel === "sms" ? contact.smsConsent : contact.whatsappConsent)) continue;
         if (!phone || !String(phone).trim()) continue;
         const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
         const key = `appointment:${a.id}:${eventType}:${contact.role}:${channel}:${recipientHash}:${dateText}:${timeText}:${eventVersion}`;
@@ -258,6 +261,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
         for (const contact of contacts) {
           for (const channel of ["sms", "whatsapp"]) {
             const phone = channel === "sms" ? contact.sms : contact.whatsapp;
+            if (contact.role === "patient" && !(channel === "sms" ? contact.smsConsent : contact.whatsappConsent)) continue;
             if (!phone || !String(phone).trim()) continue;
             const recipientHash = crypto.createHash("sha256").update(String(phone).trim()).digest("hex").slice(0, 16);
             const reminderVersion = eventType === "rescheduled" ? eventVersion : "";
@@ -343,6 +347,8 @@ async function initDatabase() {
       full_name TEXT NOT NULL,
       phone TEXT,
       whatsapp_phone TEXT,
+      sms_notifications_consent BOOLEAN NOT NULL DEFAULT FALSE,
+      whatsapp_notifications_consent BOOLEAN NOT NULL DEFAULT FALSE,
       email TEXT,
       date_of_birth DATE,
       gender TEXT,
@@ -543,6 +549,8 @@ async function initDatabase() {
     ["patients", "username", "TEXT"],
     ["patients", "phone", "TEXT"],
     ["patients", "whatsapp_phone", "TEXT"],
+    ["patients", "sms_notifications_consent", "BOOLEAN NOT NULL DEFAULT FALSE"],
+    ["patients", "whatsapp_notifications_consent", "BOOLEAN NOT NULL DEFAULT FALSE"],
     ["patients", "email", "TEXT"],
     ["patients", "date_of_birth", "DATE"],
     ["patients", "gender", "TEXT"],
@@ -947,6 +955,8 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
     const fullName = clean(req.body.full_name);
     const phone = clean(req.body.phone);
     const whatsappPhone = clean(req.body.whatsapp_phone);
+    const smsConsent = req.body.sms_notifications_consent === true;
+    const whatsappConsent = req.body.whatsapp_notifications_consent === true;
     const email = clean(req.body.email) || null;
     const password = String(req.body.password || "");
 
@@ -1009,9 +1019,9 @@ app.post(["/api/register", "/api/patient/register"], async (req, res) => {
 
       await client.query(
         `INSERT INTO patients
-        (id, user_id, username, full_name, phone, whatsapp_phone, email, active)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)`,
-        [patientId, userId, username, fullName, phone, whatsappPhone, email]
+        (id, user_id, username, full_name, phone, whatsapp_phone, sms_notifications_consent, whatsapp_notifications_consent, email, active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE)`,
+        [patientId, userId, username, fullName, phone, whatsappPhone, smsConsent, whatsappConsent, email]
       );
       await client.query("COMMIT");
     } catch (error) {
@@ -1236,12 +1246,14 @@ app.patch("/api/patient/contact", requireAuth, async (req, res) => {
     if (req.authUser.type !== "patient") return jsonError(res, 403, "هذا المسار مخصص للمرضى.");
     const phone = clean(req.body.phone || "");
     const whatsappPhone = clean(req.body.whatsapp_phone || "");
+    const smsConsent = req.body.sms_notifications_consent === true;
+    const whatsappConsent = req.body.whatsapp_notifications_consent === true;
     if (!phone || !whatsappPhone) return jsonError(res, 400, "رقم الهاتف ورقم WhatsApp مطلوبان.");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       await client.query("UPDATE users SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE id=$3 AND role='patient'", [phone, whatsappPhone, req.authUser.id]);
-      await client.query("UPDATE patients SET phone=$1,whatsapp_phone=$2,updated_at=NOW() WHERE user_id=$3", [phone, whatsappPhone, req.authUser.id]);
+      await client.query("UPDATE patients SET phone=$1,whatsapp_phone=$2,sms_notifications_consent=$3,whatsapp_notifications_consent=$4,updated_at=NOW() WHERE user_id=$5", [phone, whatsappPhone, smsConsent, whatsappConsent, req.authUser.id]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -1249,7 +1261,7 @@ app.patch("/api/patient/contact", requireAuth, async (req, res) => {
     } finally {
       client.release();
     }
-    return jsonOk(res, { message: "تم تحديث أرقام التواصل بنجاح.", phone, whatsapp_phone: whatsappPhone });
+    return jsonOk(res, { message: "تم تحديث أرقام التواصل بنجاح.", phone, whatsapp_phone: whatsappPhone, sms_notifications_consent: smsConsent, whatsapp_notifications_consent: whatsappConsent });
   } catch (error) { console.error("Update patient contacts error:", error); return jsonError(res, 500, "تعذر تحديث أرقام التواصل."); }
 });
 app.post("/api/staff/login", async (req, res) => {
