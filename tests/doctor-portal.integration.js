@@ -249,6 +249,25 @@ async function main() {
   });
   expectStatus(legacyLogin, 200, "Legacy patient with combined salt/hash can still log in");
   assert.ok(legacyLogin.data.token, "Legacy patient login should return an access token");
+  // Also handle legacy combined hashes when password_salt was already populated.
+  const mixedLegacyUsername = `mixed_legacy_patient_${suffix}`;
+  const mixedLegacyPatientId = crypto.randomUUID();
+  const mixedLegacyUserId = crypto.randomUUID();
+  await pool.query(
+    "INSERT INTO users (id,username,password_hash,password_salt,full_name,phone,role,active) VALUES ($1,$2,$3,$4,$5,$6,'patient',TRUE)",
+    [mixedLegacyUserId, mixedLegacyUsername, `${legacySalt}:${legacyHash}`, legacySalt, "Mixed Legacy Test Patient", "000000098"]
+  );
+  await pool.query(
+    "INSERT INTO patients (id,user_id,username,full_name,phone,active) VALUES ($1,$2,$3,$4,$5,TRUE)",
+    [mixedLegacyPatientId, mixedLegacyUserId, mixedLegacyUsername, "Mixed Legacy Test Patient", "000000098"]
+  );
+  const mixedLegacyLogin = await request("/api/login", {
+    method: "POST",
+    body: { username: mixedLegacyUsername, password: legacyPassword }
+  });
+  expectStatus(mixedLegacyLogin, 200, "Legacy combined password hash remains valid when password_salt is also populated");
+  assert.ok(mixedLegacyLogin.data.token, "Mixed legacy login should return an access token");
+
 
   // Exercise the public booking endpoint with two different patients racing for the same doctor slot.
   const patientAUsername = `race_patient_a_${suffix}`;
