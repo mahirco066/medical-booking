@@ -93,6 +93,18 @@ async function main() {
   });
   expectStatus(disabledSecretaryLogin, 403, "Disabled secretary cannot log in");
 
+  // Use distinct contact numbers to verify that notification routing stays within the booked doctor's team.
+  await pool.query("UPDATE doctors SET phone=$2 WHERE id=$1", [doctorA.id, "+249900000101"]);
+  await pool.query("UPDATE doctors SET phone=$2 WHERE id=$1", [doctorB.id, "+249900000102"]);
+  await pool.query(
+    "UPDATE staff_users SET phone=$2,whatsapp_phone=$3 WHERE id=$1",
+    [secretaryCreated.data.secretary.id, "+249900000201", "+249900000202"]
+  );
+  await pool.query(
+    "UPDATE staff_users SET phone=$2,whatsapp_phone=$3 WHERE id=$1",
+    [secondSecretaryCreated.data.secretary.id, "+249900000301", "+249900000302"]
+  );
+
   const serviceResult = await pool.query("SELECT id FROM services WHERE active=TRUE ORDER BY name LIMIT 1");
   const serviceId = serviceResult.rows[0]?.id || null;
   const appointmentAId = crypto.randomUUID();
@@ -347,6 +359,28 @@ async function main() {
   assert.ok(patientBookedSms, "Booking should queue an SMS notification for the patient");
   assert.ok(patientBookedWhatsApp, "Booking should queue a WhatsApp notification for the patient");
   assert.equal(patientBookedSms.status, "pending", "New booking SMS should remain queued until a worker sends it");
+
+  const doctorBookedSms = queuedNotifications.rows.find(row =>
+    row.event_type === "booked" && row.channel === "sms" && row.recipient_role === "doctor"
+  );
+  const secretaryBookedSms = queuedNotifications.rows.find(row =>
+    row.event_type === "booked" && row.channel === "sms" && row.recipient_role === "secretary" &&
+    row.payload && row.payload.doctor_name === "Test Doctor A"
+  );
+  assert.ok(doctorBookedSms, "Booking should queue an SMS notification for the booked doctor");
+  assert.equal(doctorBookedSms.payload.doctor_name, "Test Doctor A", "Doctor notification should identify the booked doctor");
+  assert.ok(secretaryBookedSms, "Booking should queue an SMS notification for the active secretary assigned to the booked doctor");
+  assert.equal(secretaryBookedSms.recipient_phone, "+249900000201", "Secretary notification should use the active secretary's contact number");
+  assert.equal(
+    queuedNotifications.rows.some(row => row.recipient_phone === "+249900000301"),
+    false,
+    "Disabled secretaries must not receive queued notifications"
+  );
+  assert.equal(
+    queuedNotifications.rows.some(row => row.recipient_phone === "+249900000102"),
+    false,
+    "A different doctor's contact number must not receive this appointment's notification"
+  );
   const patientReminderSms = queuedNotifications.rows.find(row =>
     row.event_type === "reminder_24h" && row.channel === "sms" && row.recipient_role === "patient"
   );
