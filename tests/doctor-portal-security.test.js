@@ -95,8 +95,8 @@ test("notification worker fences stale lease completions", () => {
   const worker = fs.readFileSync(path.join(root, "notification-worker.js"), "utf8");
   const claim = sectionBetween(worker, "async function claimOne()", "async function finish(");
   const finish = sectionBetween(worker, "async function finish(", "async function isNotificationStillRelevant(");
-  assert.match(claim, /RETURNING locked_at/);
-  assert.match(claim, /row\.locked_at\s*=\s*lease\.rows\[0\]/);
-  assert.match(finish, /WHERE id=\$1 AND status='processing' AND locked_at=\$8/);
-  assert.match(finish, /row\.locked_at/);
+  assert.match(claim, /RETURNING to_char\(locked_at, 'YYYY-MM-DD HH24:MI:SS\.USOF'\) AS lease_token/);
+  assert.match(claim, /row\.lease_token\s*=\s*lease\.rows\[0\]/);
+  assert.match(finish, /WHERE id=\$1 AND status='processing' AND locked_at=\$8::timestamptz/);
+  assert.match(finish, /row\.lease_token/);
 });
