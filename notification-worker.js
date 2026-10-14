@@ -119,7 +119,8 @@ async function claimOne() {
     );
     if (!result.rowCount) { await client.query("COMMIT"); return null; }
     const row = result.rows[0];
-    await client.query("UPDATE notification_outbox SET status='processing',attempts=attempts+1,locked_at=NOW(),updated_at=NOW(),last_error=NULL WHERE id=$1", [row.id]);
+    const lease = await client.query("UPDATE notification_outbox SET status='processing',attempts=attempts+1,locked_at=NOW(),updated_at=NOW(),last_error=NULL WHERE id=$1 RETURNING locked_at", [row.id]);
+    row.locked_at = lease.rows[0]?.locked_at || null;
     await client.query("COMMIT");
     return row;
   } catch (error) {
@@ -136,8 +137,8 @@ async function finish(row, status, errorText, sentAt, providerMessageId) {
   await pool.query(
     "UPDATE notification_outbox SET status=$2,last_error=$3,sent_at=$4,provider_message_id=$5,locked_at=NULL," +
     " scheduled_at=CASE WHEN $2='failed' AND attempts < $6 THEN NOW() + ($7 * INTERVAL '1 second') ELSE scheduled_at END," +
-    " updated_at=NOW() WHERE id=$1",
-    [row.id, status, errorText || null, sentAt || null, providerMessageId || null, MAX_ATTEMPTS, delaySeconds]
+    " updated_at=NOW() WHERE id=$1 AND status='processing' AND locked_at=$8",
+    [row.id, status, errorText || null, sentAt || null, providerMessageId || null, MAX_ATTEMPTS, delaySeconds, row.locked_at]
   );
 }
 
