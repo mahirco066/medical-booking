@@ -223,6 +223,19 @@ async function main() {
   });
   expectStatus(secretaryCancelsOwnAppointment, 200, "Secretary can cancel an appointment for their own doctor");
 
+  const cancelledOutbox = await pool.query(
+    "SELECT event_type,status FROM notification_outbox WHERE appointment_id=$1",
+    [appointmentConflictId]
+  );
+  assert.ok(
+    cancelledOutbox.rows.some(row => row.event_type === "cancelled" && row.status === "pending"),
+    "Cancelling an appointment should queue a cancellation notice"
+  );
+  assert.ok(
+    cancelledOutbox.rows.filter(row => row.event_type !== "cancelled").every(row => row.status === "cancelled" || row.status === "sent"),
+    "Cancellation should invalidate unsent booking/reminder notifications while preserving sent audit rows"
+  );
+
   const cannotReopenCancelledAppointment = await request(`/api/doctor/appointments/${appointmentConflictId}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
   });
@@ -234,6 +247,22 @@ async function main() {
   });
   expectStatus(validReschedule, 200, "Appointment can be moved to a free slot within active schedule");
   assert.equal(String(validReschedule.data.appointment.appointment_time).slice(0, 5), "09:30");
+
+  const rescheduledOutbox = await pool.query(
+    "SELECT event_type,status,payload FROM notification_outbox WHERE appointment_id=$1",
+    [appointmentAId]
+  );
+  assert.ok(
+    rescheduledOutbox.rows.some(row => row.event_type === "rescheduled" && row.status === "pending" &&
+      row.payload && String(row.payload.appointment_time).slice(0, 5) === "09:30"),
+    "Rescheduling should queue a notice for the new appointment time"
+  );
+  assert.ok(
+    rescheduledOutbox.rows.filter(row => ["booked","confirmed","rescheduled","reminder_24h"].includes(row.event_type) &&
+      String(row.payload && row.payload.appointment_time).slice(0, 5) !== "09:30")
+      .every(row => row.status === "cancelled" || row.status === "sent"),
+    "Rescheduling should invalidate unsent notifications for the old time"
+  );
 
   // Preserve login compatibility for legacy patient hashes stored as "salt:hash".
   const legacyPatientUsername = `legacy_patient_${suffix}`;
