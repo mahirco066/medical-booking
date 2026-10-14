@@ -9,6 +9,7 @@ if (missing.length) {
   process.exit(1);
 }
 const SMS_FROM = process.env.TWILIO_SMS_FROM || "";
+const WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
 // WhatsApp rows are queued by the app, but delivery stays disabled until the
 // worker supports approved template messages and an explicit consent check.
 const ENABLED_CHANNELS = SMS_FROM ? ["sms"] : [];
