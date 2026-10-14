@@ -1218,6 +1218,8 @@ app.get("/api/patient/me", requireAuth, async (req, res) => {
         p.full_name,
         p.phone,
         p.whatsapp_phone,
+        p.sms_notifications_consent,
+        p.whatsapp_notifications_consent,
         p.email,
         p.date_of_birth,
         p.gender,
