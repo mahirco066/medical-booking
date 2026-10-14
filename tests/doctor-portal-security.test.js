@@ -89,3 +89,14 @@ test("notification worker rechecks current patient channel consent before delive
   assert.ok(consentIndex < sendIndex, "Consent must be rechecked before contacting the messaging provider");
   assert.match(delivery, /await finish\(row, "cancelled"/);
 });
+
+
+test("notification worker fences stale lease completions", () => {
+  const worker = fs.readFileSync(path.join(root, "notification-worker.js"), "utf8");
+  const claim = sectionBetween(worker, "async function claimOne()", "async function finish(");
+  const finish = sectionBetween(worker, "async function finish(", "async function isNotificationStillRelevant(");
+  assert.match(claim, /RETURNING locked_at/);
+  assert.match(claim, /row\.locked_at\s*=\s*lease\.rows\[0\]/);
+  assert.match(finish, /WHERE id=\$1 AND status='processing' AND locked_at=\$8/);
+  assert.match(finish, /row\.locked_at/);
+});
