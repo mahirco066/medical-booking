@@ -726,21 +726,27 @@ async function seedAdmin() {
     process.env.ADMIN_USERNAME || "admin"
   );
 
-  const password =
-    process.env.ADMIN_PASSWORD || "admin123";
-
+  const password = process.env.ADMIN_PASSWORD;
   const fullName =
     process.env.ADMIN_NAME || "مدير منصة موعدي";
-
-  const passwordData = await hashPassword(password);
-
-  const passwordHash =
-    `${passwordData.salt}:${passwordData.hash}`;
 
   const existing = await pool.query(
     "SELECT id FROM staff_users WHERE username=$1 LIMIT 1",
     [username]
   );
+
+  // Never reset an existing administrator password on every server start.
+  // Require an explicitly configured secret only when bootstrapping a new admin.
+  if (!password) {
+    if (existing.rowCount) {
+      console.warn("ADMIN_PASSWORD is not set; preserving the existing admin credentials.");
+      return;
+    }
+    throw new Error("ADMIN_PASSWORD must be set to create the initial admin account.");
+  }
+
+  const passwordData = await hashPassword(password);
+  const passwordHash = `${passwordData.salt}:${passwordData.hash}`;
 
   if (existing.rowCount) {
     await pool.query(
