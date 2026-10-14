@@ -143,12 +143,22 @@ async function finish(row, status, errorText, sentAt, providerMessageId) {
 
 async function isNotificationStillRelevant(row) {
   const result = await pool.query(
-    "SELECT status,appointment_date::text AS appointment_date,to_char(appointment_time,'HH24:MI') AS appointment_time " +
-    "FROM appointments WHERE id=$1 LIMIT 1",
+    "SELECT a.status,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
+    " COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent," +
+    " COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent" +
+    " FROM appointments a LEFT JOIN patients p ON p.id=a.patient_id WHERE a.id=$1 LIMIT 1",
     [row.appointment_id]
   );
   if (!result.rowCount) return false;
   const appointment = result.rows[0];
+  if (row.recipient_role === "patient") {
+    const consent = row.channel === "sms"
+      ? appointment.patient_sms_consent
+      : row.channel === "whatsapp"
+        ? appointment.patient_whatsapp_consent
+        : false;
+    if (consent !== true) return false;
+  }
   return isNotificationRelevant(
     row.event_type,
     appointment.status,
