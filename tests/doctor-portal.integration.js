@@ -281,6 +281,45 @@ async function main() {
   assert.ok(mixedLegacyLogin.data.token, "Mixed legacy login should return an access token");
 
 
+  // Inject a patient-profile insert failure and verify registration rolls back the users row.
+  const rollbackUsername = `rollback_patient_${suffix}`;
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION test_fail_selected_patient_insert() RETURNS trigger
+    LANGUAGE plpgsql AS $
+    BEGIN
+      IF NEW.username LIKE 'rollback_patient_%' THEN
+        RAISE EXCEPTION 'injected patient insert failure';
+      END IF;
+      RETURN NEW;
+    END;
+    $
+  `);
+  await pool.query(`
+    CREATE TRIGGER test_fail_selected_patient_insert_trigger
+    BEFORE INSERT ON patients
+    FOR EACH ROW EXECUTE FUNCTION test_fail_selected_patient_insert()
+  `);
+  try {
+    const failedRegistration = await request("/api/patient/register", {
+      method: "POST",
+      body: {
+        username: rollbackUsername,
+        full_name: "Rollback Test Patient",
+        phone: "000000097",
+        whatsapp_phone: "000000096",
+        password: "RollbackPass123"
+      }
+    });
+    expectStatus(failedRegistration, 500, "Injected patient-profile failure should fail registration");
+    const orphanUsers = await pool.query("SELECT id FROM users WHERE username=$1", [rollbackUsername]);
+    const orphanPatients = await pool.query("SELECT id FROM patients WHERE username=$1", [rollbackUsername]);
+    assert.equal(orphanUsers.rowCount, 0, "Failed registration must not leave an orphaned users row");
+    assert.equal(orphanPatients.rowCount, 0, "Failed registration must not leave a patient profile");
+  } finally {
+    await pool.query("DROP TRIGGER IF EXISTS test_fail_selected_patient_insert_trigger ON patients");
+    await pool.query("DROP FUNCTION IF EXISTS test_fail_selected_patient_insert()");
+  }
+
   // Exercise the public booking endpoint with two different patients racing for the same doctor slot.
   const patientAUsername = `race_patient_a_${suffix}`;
   const patientBUsername = `race_patient_b_${suffix}`;
