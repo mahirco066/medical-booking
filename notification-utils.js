@@ -20,6 +20,13 @@ function calculateReminderAt(dateText, timeText) {
   return new Date(localAsUtc - 24 * 60 * 60 * 1000);
 }
 
+function isPatientChannelConsented(recipientRole, channel, smsConsent, whatsappConsent) {
+  if (recipientRole !== "patient") return true;
+  if (channel === "sms") return smsConsent === true;
+  if (channel === "whatsapp") return whatsappConsent === true;
+  return false;
+}
+
 function isNotificationRelevant(eventType, currentStatus, payloadDate, payloadTime, currentDate, currentTime) {
   const sameSlot =
     String(payloadDate || "").slice(0, 10) === String(currentDate || "").slice(0, 10) &&
@@ -33,4 +40,4 @@ function isNotificationRelevant(eventType, currentStatus, payloadDate, payloadTi
   return false;
 }
 
-module.exports = { calculateReminderAt, isNotificationRelevant };
+module.exports = { calculateReminderAt, isNotificationRelevant, isPatientChannelConsented };
