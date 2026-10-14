@@ -452,7 +452,7 @@ async function main() {
   const optOutBooking = await request("/api/appointments", {
     token: optOutRegistration.data.token,
     method: "POST",
-    body: { service_id: serviceId, doctor_id: doctorA.id, appointment_date: date, appointment_time: "12:00" }
+    body: { service_id: serviceId, doctor_id: doctorA.id, appointment_date: date, appointment_time: "11:30" }
   });
   expectStatus(optOutBooking, 200, "Patient can book without opting into notifications");
   const optOutAppointment = await pool.query(
