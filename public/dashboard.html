@@ -464,7 +464,7 @@ function renderAppointments(appointments){
 
     let statusHtml = "";
 
-    if (status === "pending") {
+    else if (status === "pending") {
       statusHtml = `<span class="badge" style="background:#fef3c7;color:#92400e">في انتظار التأكيد</span>`;
     } else if (status === "confirmed") {
       statusHtml = `<span class="badge badge-green">مؤكد</span>`;
