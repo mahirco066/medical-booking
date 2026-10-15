@@ -100,5 +100,5 @@ test("dry-run closes the pool and marks failure with a mocked database error", (
   const result = runWorkerWithMockDatabase(true);
   assert.equal(result.status, 1, result.stderr || result.stdout);
   assert.match(result.stdout, /MOCK_TEST_PASS:failure/);
-  assert.match(result.stdout, /DRY RUN check failed/);
+  assert.match(result.stderr, /DRY RUN check failed/);
 });
