@@ -257,11 +257,27 @@ async function main() {
   expectStatus(validReschedule, 200, "Appointment can be moved to a free slot within active schedule");
   assert.equal(String(validReschedule.data.appointment.appointment_time).slice(0, 5), "09:30");
   
-  // Link this confirmed test appointment to a real patient account and verify
+  // Create a dedicated patient for the reschedule-approval scenario.
+  // This must happen here: the later booking-race test creates its own patients.
+  const approvalPatientUsername = `approval_patient_${suffix}`;
+  const approvalPatientResult = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: approvalPatientUsername,
+      full_name: "Reschedule Approval Test Patient",
+      phone: `000009${suffix.slice(0, 2)}`,
+      whatsapp_phone: `000008${suffix.slice(0, 2)}`,
+      password: "ApprovalPatientPass123"
+    }
+  });
+  expectStatus(approvalPatientResult, 200, "Register patient for reschedule approval test");
+  assert.ok(approvalPatientResult.data.token, "Approval test patient should receive an access token");
+
+  // Link this confirmed test appointment to that patient account and verify
   // that rescheduling requires approval before staff can change its status.
   await pool.query(
     "UPDATE appointments SET patient_id=(SELECT id FROM patients WHERE username=$2) WHERE id=$1",
-    [appointmentAId, patientAUsername]
+    [appointmentAId, approvalPatientUsername]
   );
   const appointmentAWithApproval = await pool.query(
     "SELECT status,reschedule_approval_required FROM appointments WHERE id=$1",
@@ -281,14 +297,14 @@ async function main() {
   });
   expectStatus(adminStatusBeforeApproval, 403, "Admin cannot change status while patient approval is pending");
 
-  const patientAppointmentsBeforeApproval = await request("/api/my-appointments", { token: patientALogin.data.token });
+  const patientAppointmentsBeforeApproval = await request("/api/my-appointments", { token: approvalPatientResult.data.token });
   expectStatus(patientAppointmentsBeforeApproval, 200, "Patient can view their rescheduled appointment");
   assert.ok(patientAppointmentsBeforeApproval.data.appointments.some(a =>
     a.id === appointmentAId && a.reschedule_approval_required === true
   ), "Patient appointment list must flag the changed time for approval");
 
   const patientApprovesReschedule = await request(`/api/my-appointments/${appointmentAId}/approve-reschedule`, {
-    token: patientALogin.data.token, method: "PATCH"
+    token: approvalPatientResult.data.token, method: "PATCH"
   });
   expectStatus(patientApprovesReschedule, 200, "Owning patient can approve the new appointment time");
   assert.equal(patientApprovesReschedule.data.appointment.reschedule_approval_required, false,
