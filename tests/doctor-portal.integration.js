@@ -303,6 +303,32 @@ async function main() {
     a.id === appointmentAId && a.reschedule_approval_required === true
   ), "Patient appointment list must flag the changed time for approval");
 
+  // A different patient must not be able to approve someone else's appointment.
+  const unrelatedPatientUsername = `unrelated_patient_${suffix}`;
+  const unrelatedPatientResult = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: unrelatedPatientUsername,
+      full_name: "Unrelated Test Patient",
+      phone: `0000079${suffix.slice(0, 2)}`,
+      whatsapp_phone: `0000069${suffix.slice(0, 2)}`,
+      password: "UnrelatedPatientPass123"
+    }
+  });
+  expectStatus(unrelatedPatientResult, 200, "Register unrelated patient for ownership check");
+  const unauthorizedApproval = await request(`/api/my-appointments/${appointmentAId}/approve-reschedule`, {
+    token: unrelatedPatientResult.data.token,
+    method: "PATCH"
+  });
+  expectStatus(unauthorizedApproval, 409, "Different patient cannot approve this appointment");
+  const approvalAfterUnauthorizedAttempt = await pool.query(
+    "SELECT status,reschedule_approval_required FROM appointments WHERE id=$1",
+    [appointmentAId]
+  );
+  assert.equal(approvalAfterUnauthorizedAttempt.rows[0].status, "confirmed");
+  assert.equal(approvalAfterUnauthorizedAttempt.rows[0].reschedule_approval_required, true,
+    "Unauthorized approval attempt must leave patient approval pending");
+
   const patientApprovesReschedule = await request(`/api/my-appointments/${appointmentAId}/approve-reschedule`, {
     token: approvalPatientResult.data.token, method: "PATCH"
   });
