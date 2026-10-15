@@ -233,6 +233,12 @@ async function dryRunTick() {
     console.log("Notification worker DRY RUN queue summary:", JSON.stringify(result.rows));
   } catch (error) {
     console.error("Notification worker DRY RUN check failed:", String(error && error.message ? error.message : error).slice(0, 500));
+    // Match the checklist: a failed database check stops dry-run instead of
+    // silently retrying forever against a missing table or broken connection.
+    stopping = true;
+    clearInterval(timer);
+    await pool.end().catch(() => {});
+    process.exitCode = 1;
   } finally {
     running = false;
   }
