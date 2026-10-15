@@ -94,7 +94,7 @@ test("doctor and secretary see only the UI features allowed for their role", asy
 
 test("patient can review and approve a rescheduled confirmed appointment in the browser", async ({ page, request }) => {
   const { Pool } = require("pg");
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: /127\\.0\\.0\\.1|localhost/.test(process.env.DATABASE_URL || "") ? false : { rejectUnauthorized: false } });
   const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
   const username = `approval_patient_${suffix}`;
   const password = "ApprovalPatientPass123";
