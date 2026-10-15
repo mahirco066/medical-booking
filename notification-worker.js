@@ -93,17 +93,36 @@ async function sendTwilioMessage(row) {
     : configuredFrom;
   const endpoint = "https://api.twilio.com/2010-04-01/Accounts/" + SID + "/Messages.json";
   const form = new URLSearchParams({ To: to, From: from, Body: messageFor(row) });
-  const response = await fetch(endpoint, {
-    signal: AbortSignal.timeout(20000),
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + Buffer.from(SID + ":" + TOKEN).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: form
-  });
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(20000),
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(SID + ":" + TOKEN).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form
+    });
+  } catch (error) {
+    // A timeout or connection failure can happen after the provider accepted
+    // the request. Retrying automatically could send a duplicate message.
+    const uncertain = new Error("Delivery outcome unknown; automatic retry suppressed to avoid a duplicate message.");
+    uncertain.deliveryOutcomeUnknown = true;
+    uncertain.cause = error;
+    throw uncertain;
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(String(data.message || ("Twilio HTTP " + response.status)).slice(0, 500));
+  if (!response.ok) {
+    const error = new Error(String(data.message || ("Twilio HTTP " + response.status)).slice(0, 500));
+    // A provider-side 5xx may occur after processing the request. Treat it as
+    // ambiguous; only explicit non-5xx rejection responses use normal retries.
+    if (response.status >= 500) {
+      error.deliveryOutcomeUnknown = true;
+      error.message = "Provider returned HTTP " + response.status + "; delivery outcome may be unknown, automatic retry suppressed.";
+    }
+    throw error;
+  }
   return data.sid || null;
 }
 
@@ -207,7 +226,16 @@ async function processOne() {
   } catch (error) {
     const message = String(error && error.message ? error.message : error).slice(0, 500);
     console.error("Notification delivery failed: " + row.id + " " + message);
-    await finish(row, "failed", message, null, null);
+    if (error && error.deliveryOutcomeUnknown) {
+      // The claim already incremented attempts. Exhaust the retry budget so
+      // this row is not automatically resent when provider acceptance is unclear.
+      await pool.query(
+        "UPDATE notification_outbox SET status='failed',attempts=$2,last_error=$3,locked_at=NULL,updated_at=NOW() WHERE id=$1 AND status='processing' AND locked_at=$4::timestamptz",
+        [row.id, MAX_ATTEMPTS, message, row.lease_token]
+      );
+    } else {
+      await finish(row, "failed", message, null, null);
+    }
     return true;
   }
 }
