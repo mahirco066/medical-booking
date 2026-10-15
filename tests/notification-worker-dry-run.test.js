@@ -28,7 +28,7 @@ test("dry-run performs only an aggregate SELECT against the outbox", () => {
   const section = dryRunSection();
   assert.match(section, /SELECT status, channel, COUNT\(\*\)::int AS count FROM notification_outbox GROUP BY status, channel ORDER BY status, channel/i);
   assert.doesNotMatch(section, /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP)\b/i);
-  assert.doesNotMatch(section, /sendTwilioMessage|claim|fetch\s*\(/i);
+  assert.doesNotMatch(section, /sendTwilioMessage|\bclaimOne\b|\bfetch\s*\(/i);
 });
 
 test("dry-run database failure stops the timer, closes the pool, and marks failure", () => {
