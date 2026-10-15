@@ -56,8 +56,8 @@ function runWorkerWithMockDatabase(shouldFail) {
         assert.ok(fakePool, "worker should initialize the mocked pool");
         assert.equal(fakePool.queries.length, 1, "dry-run should issue one query on startup");
         const sql = fakePool.queries[0].sql;
-        assert.match(sql, /^SELECT\\s+status,\\s*channel,\\s*COUNT\\(\\*\\)::int AS count FROM notification_outbox/i);
-        assert.doesNotMatch(sql, /\\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP)\\b/i);
+        assert.match(sql, /^SELECT\s+status,\s*channel,\s*COUNT\(\*\)::int AS count FROM notification_outbox/i);
+        assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP)\b/i);
         assert.equal(fakePool.options.connectionString, "postgres://mock.invalid/test");
         if (process.env.MOCK_DB_FAIL === "true") {
           setImmediate(() => {
