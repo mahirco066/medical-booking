@@ -598,6 +598,7 @@ async function initDatabase() {
     ["appointments", "appointment_date", "DATE"],
     ["appointments", "appointment_time", "TIME"],
     ["appointments", "status", "TEXT NOT NULL DEFAULT 'pending'"],
+    ["appointments", "reschedule_approval_required", "BOOLEAN NOT NULL DEFAULT FALSE"],
     ["appointments", "notes", "TEXT"],
     ["appointments", "cancellation_reason", "TEXT"],
     ["appointments", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
@@ -1790,7 +1791,7 @@ app.get("/api/my-appointments", requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(
-      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id JOIN patients p ON p.id=a.patient_id WHERE p.user_id=$1 ORDER BY a.appointment_date DESC,a.appointment_time DESC",
+      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.reschedule_approval_required,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id JOIN patients p ON p.id=a.patient_id WHERE p.user_id=$1 ORDER BY a.appointment_date DESC,a.appointment_time DESC",
       [req.authUser.id]
     );
 
@@ -1801,6 +1802,24 @@ app.get("/api/my-appointments", requireAuth, async (req, res) => {
   }
 });
 
+app.patch("/api/my-appointments/:id/approve-reschedule", requireAuth, async (req, res) => {
+  try {
+    if (req.authUser.type !== "patient") {
+      return jsonError(res, 403, "هذا المسار مخصص للمرضى.");
+    }
+    const result = await pool.query(
+      "UPDATE appointments a SET reschedule_approval_required=FALSE, updated_at=NOW() FROM patients p WHERE a.id=$1 AND a.patient_id=p.id AND p.user_id=$2 AND a.status='confirmed' AND a.reschedule_approval_required=TRUE RETURNING a.*",
+      [req.params.id, req.authUser.id]
+    );
+    if (!result.rowCount) {
+      return jsonError(res, 409, "لا يوجد تعديل وقت بانتظار موافقتك لهذا الموعد.");
+    }
+    return jsonOk(res, { message: "تمت الموافقة على الوقت الجديد وأصبح الموعد مؤكدًا.", appointment: result.rows[0] });
+  } catch (error) {
+    console.error("Approve rescheduled appointment error:", error);
+    return jsonError(res, 500, "تعذر تسجيل موافقتك على الوقت الجديد.");
+  }
+});
 app.patch("/api/my-appointments/:id/cancel", requireAuth, async (req, res) => {
   try {
     if (req.authUser.type !== "patient") {
@@ -2596,7 +2615,7 @@ app.get("/api/doctor/appointments", requireDoctorOrSecretary, async (req, res) =
     const date=clean(req.query.date||""), status=clean(req.query.status||"");
     if(date && validDate(date)){conditions.push("a.appointment_date=$"+n++);values.push(date);}
     if(status){conditions.push("a.status=$"+n++);values.push(status);}
-    const r=await pool.query("SELECT a.id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,s.name AS service_name,s.price FROM appointments a LEFT JOIN services s ON s.id=a.service_id WHERE "+conditions.join(" AND ")+" ORDER BY a.appointment_date ASC,a.appointment_time ASC",values);
+    const r=await pool.query("SELECT a.id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.reschedule_approval_required,a.notes,a.cancellation_reason,a.created_at,s.name AS service_name,s.price FROM appointments a LEFT JOIN services s ON s.id=a.service_id WHERE "+conditions.join(" AND ")+" ORDER BY a.appointment_date ASC,a.appointment_time ASC",values);
     return jsonOk(res,{appointments:r.rows});
   } catch(e){console.error("Doctor appointments error:",e);return jsonError(res,500,"تعذر تحميل مواعيد الطبيب.");}
 });
@@ -2609,17 +2628,20 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
       return jsonError(res,403,"يمكن للسكرتير تأكيد الموعد أو إلغاءه فقط.");
     }
     const current=await pool.query(
-      "SELECT id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      "SELECT id,status,reschedule_approval_required FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
       [req.params.id,req.authUser.doctor_id]
     );
     if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+    if(current.rows[0].reschedule_approval_required && status !== "cancelled"){
+      return jsonError(res,409,"لا يمكن تغيير حالة الموعد قبل موافقة المريض على الوقت الجديد.");
+    }
     if(!["pending","confirmed"].includes(current.rows[0].status)){
       return jsonError(res,409,"لا يمكن تغيير حالة موعد منتهٍ أو ملغى.");
     }
     const reason=clean(req.body.cancellation_reason||"")||null;
     const r=await withDatabaseTransaction(async (client) => {
       const updated = await client.query(
-        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') AND ($1='cancelled' OR reschedule_approval_required=FALSE) RETURNING *",
         [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
       );
       if (updated.rowCount && (status === "cancelled" || status === "confirmed")) {
@@ -2639,7 +2661,7 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
     if(!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time))return jsonError(res,400,"وقت الموعد غير صحيح.");
 
     const current=await pool.query(
-      "SELECT id,patient_id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      "SELECT id,patient_id,status,appointment_date,appointment_time FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
       [req.params.id,req.authUser.doctor_id]
     );
     if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
@@ -2681,7 +2703,7 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
       }
 
       const updated = await client.query(
-        "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        "UPDATE appointments SET reschedule_approval_required = CASE WHEN status='confirmed' AND (appointment_date IS DISTINCT FROM $1::date OR appointment_time IS DISTINCT FROM $2::time) THEN TRUE ELSE reschedule_approval_required END, appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
         [date,time,req.params.id,req.authUser.doctor_id]
       );
       if (updated.rowCount) {
@@ -2778,7 +2800,7 @@ app.get("/api/admin/appointments", requireAdmin, async (req, res) => {
       : "";
 
     const result = await pool.query(
-      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price,p.email AS patient_email FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id LEFT JOIN patients p ON p.id=a.patient_id " +
+      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.reschedule_approval_required,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price,p.email AS patient_email FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id LEFT JOIN patients p ON p.id=a.patient_id " +
         where +
         " ORDER BY a.appointment_date DESC,a.appointment_time DESC",
       values
@@ -2809,12 +2831,23 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
       return jsonError(res, 400, "حالة الموعد غير صحيحة.");
     }
 
+    const currentAppointment = await pool.query(
+      "SELECT id,reschedule_approval_required FROM appointments WHERE id=$1 LIMIT 1",
+      [req.params.id]
+    );
+    if (!currentAppointment.rowCount) {
+      return jsonError(res, 404, "الموعد غير موجود.");
+    }
+    if (currentAppointment.rows[0].reschedule_approval_required && status !== "cancelled") {
+      return jsonError(res, 409, "لا يمكن تغيير حالة الموعد قبل موافقة المريض على الوقت الجديد.");
+    }
+
     const cancellationReason =
       clean(req.body.cancellation_reason) || null;
 
     const result = await withDatabaseTransaction(async (client) => {
       const updated = await client.query(
-        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 RETURNING *",
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND ($1='cancelled' OR reschedule_approval_required=FALSE) RETURNING *",
         [
           status,
           status === "cancelled" ? cancellationReason : null,
@@ -2854,7 +2887,7 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
     }
 
     const currentResult = await pool.query(
-      "SELECT id,doctor_id,patient_id FROM appointments WHERE id=$1 LIMIT 1",
+      "SELECT id,doctor_id,patient_id,status,appointment_date,appointment_time FROM appointments WHERE id=$1 LIMIT 1",
       [req.params.id]
     );
     if (!currentResult.rowCount) return jsonError(res, 404, "الموعد غير موجود.");
@@ -2880,7 +2913,13 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
 
       const updated = await client.query(
         `UPDATE appointments
-         SET appointment_date = $1::date,
+         SET reschedule_approval_required = CASE
+               WHEN status='confirmed'
+                 AND (appointment_date IS DISTINCT FROM $1::date OR appointment_time IS DISTINCT FROM $2::time)
+               THEN TRUE
+               ELSE reschedule_approval_required
+             END,
+             appointment_date = $1::date,
              appointment_time = $2::time,
              updated_at = NOW()
          WHERE id = $3

@@ -1690,7 +1690,8 @@
       return;
     }
 
-    const statusLabel = (status) => {
+    const statusLabel = (status, approvalRequired) => {
+      if (approvalRequired) return { text: "بانتظار موافقتك على الوقت الجديد", bg: "#ffedd5", color: "#9a3412" };
       switch (status) {
         case "confirmed":
           return {
@@ -1726,7 +1727,8 @@
       .map((appointment) => {
         const status =
           statusLabel(
-            appointment.status
+            appointment.status,
+            appointment.reschedule_approval_required === true
           );
 
         const doctorName =
@@ -1813,6 +1815,19 @@
             </div>
 
             ${
+              appointment.reschedule_approval_required === true
+                ? `
+                  <div style="margin-top:12px;padding:12px;border-radius:10px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:13px;">
+                    <strong>تم تغيير وقت موعدك.</strong>
+                    يرجى مراجعة التاريخ والوقت أعلاه والموافقة إذا كانا مناسبين لك.
+                    <button type="button" data-approve-reschedule="${escapeHtml(appointment.id)}" style="display:block;margin-top:10px;width:100%;padding:10px;border:0;border-radius:8px;background:#0f766e;color:white;font-weight:700;cursor:pointer;">أوافق على الوقت الجديد</button>
+                    <button type="button" data-request-new-time="${escapeHtml(appointment.id)}" style="display:block;margin-top:8px;width:100%;padding:10px;border:1px solid #c2410c;border-radius:8px;background:white;color:#9a3412;font-weight:700;cursor:pointer;">الوقت لا يناسبني — أراجع العيادة</button>
+                  </div>
+                `
+                : ""
+            }
+
+            ${
               appointment.notes
                 ? `
                   <div style="
@@ -1867,6 +1882,23 @@
         `),
       "650px"
     );
+    appointmentsModal.querySelectorAll("[data-approve-reschedule]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await api("/my-appointments/" + encodeURIComponent(button.dataset.approveReschedule) + "/approve-reschedule", { method: "PATCH", body: JSON.stringify({}) });
+          notify("تمت موافقتك على الوقت الجديد، وأصبح الموعد مؤكدًا.", "success");
+          appointmentsModal.remove();
+          await openMyAppointments();
+        } catch (error) {
+          notify(error.message || "تعذر تسجيل الموافقة.", "error");
+          button.disabled = false;
+        }
+      });
+    });
+    appointmentsModal.querySelectorAll("[data-request-new-time]").forEach((button) => {
+      button.addEventListener("click", () => notify("يرجى التواصل مع العيادة لاختيار وقت بديل. سيظل الوقت الجديد بانتظار موافقتك حتى يتم الاتفاق عليه.", "info"));
+    });
     $("#editPatientContacts", appointmentsModal)?.addEventListener("click", openPatientContactEditor);
   }
 

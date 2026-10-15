@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/doctor-secretary-portal]
+    branches: [feature/doctor-secretary-portal, feature/patient-reschedule-approval]
 
 jobs:
   browser:
@@ -64,6 +64,8 @@ jobs:
           cat /tmp/medical-booking-test.log
           echo "Test server did not become ready in time."
           exit 1
+      - name: Run doctor portal integration checks
+        run: node tests/doctor-portal.integration.js
       - name: Run doctor and secretary UI browser test
         run: npx playwright test tests/doctor-portal.browser.spec.js --reporter=line
       - name: Show server log if browser test fails

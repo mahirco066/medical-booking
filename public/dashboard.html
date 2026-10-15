@@ -140,6 +140,11 @@
     <strong id="summaryPending" style="display:block;font-size:30px;color:#b45309;margin-top:8px;">0</strong>
   </div>
 
+  <div style="background:#fff0e6;border-right:5px solid #ea580c;border-radius:12px;padding:18px;">
+    <div style="color:#9a3412;font-size:14px;">بانتظار موافقة المريض</div>
+    <strong id="summaryApproval" style="display:block;font-size:30px;color:#c2410c;margin-top:8px;">0</strong>
+  </div>
+
   <div style="background:#e5f8ee;border-right:5px solid #16a34a;border-radius:12px;padding:18px;">
     <div style="color:#166534;font-size:14px;">المواعيد المؤكدة</div>
     <strong id="summaryConfirmed" style="display:block;font-size:30px;color:#15803d;margin-top:8px;">0</strong>
@@ -412,8 +417,16 @@ function filterAppointments() {
     appointment => appointment.status === "pending"
   ).length;
 
+  const awaitingPatientApproval = filteredAppointments.filter(
+    appointment =>
+      appointment.status === "confirmed" &&
+      appointment.reschedule_approval_required === true
+  ).length;
+
   const confirmed = filteredAppointments.filter(
-    appointment => appointment.status === "confirmed"
+    appointment =>
+      appointment.status === "confirmed" &&
+      appointment.reschedule_approval_required !== true
   ).length;
 
   const cancelled = filteredAppointments.filter(
@@ -427,6 +440,10 @@ function filterAppointments() {
 
   if ($("summaryPending")) {
     $("summaryPending").textContent = pending;
+  }
+
+  if ($("summaryApproval")) {
+    $("summaryApproval").textContent = awaitingPatientApproval;
   }
 
   if ($("summaryConfirmed")) {
@@ -464,7 +481,9 @@ function renderAppointments(appointments){
 
     let statusHtml = "";
 
-    if (status === "pending") {
+    if (appointment.reschedule_approval_required === true) {
+      statusHtml = `<span class="badge" style="background:#ffedd5;color:#9a3412">بانتظار موافقة المريض على الوقت الجديد</span>`;
+    } else if (status === "pending") {
       statusHtml = `<span class="badge" style="background:#fef3c7;color:#92400e">في انتظار التأكيد</span>`;
     } else if (status === "confirmed") {
       statusHtml = `<span class="badge badge-green">مؤكد</span>`;

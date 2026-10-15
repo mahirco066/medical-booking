@@ -256,6 +256,93 @@ async function main() {
   });
   expectStatus(validReschedule, 200, "Appointment can be moved to a free slot within active schedule");
   assert.equal(String(validReschedule.data.appointment.appointment_time).slice(0, 5), "09:30");
+  
+  // Create a dedicated patient for the reschedule-approval scenario.
+  // This must happen here: the later booking-race test creates its own patients.
+  const approvalPatientUsername = `approval_patient_${suffix}`;
+  const approvalPatientResult = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: approvalPatientUsername,
+      full_name: "Reschedule Approval Test Patient",
+      phone: `000009${suffix.slice(0, 2)}`,
+      whatsapp_phone: `000008${suffix.slice(0, 2)}`,
+      password: "ApprovalPatientPass123"
+    }
+  });
+  expectStatus(approvalPatientResult, 200, "Register patient for reschedule approval test");
+  assert.ok(approvalPatientResult.data.token, "Approval test patient should receive an access token");
+
+  // Link this confirmed test appointment to that patient account and verify
+  // that rescheduling requires approval before staff can change its status.
+  await pool.query(
+    "UPDATE appointments SET patient_id=(SELECT id FROM patients WHERE username=$2) WHERE id=$1",
+    [appointmentAId, approvalPatientUsername]
+  );
+  const appointmentAWithApproval = await pool.query(
+    "SELECT status,reschedule_approval_required FROM appointments WHERE id=$1",
+    [appointmentAId]
+  );
+  assert.equal(appointmentAWithApproval.rows[0].status, "confirmed");
+  assert.equal(appointmentAWithApproval.rows[0].reschedule_approval_required, true,
+    "Changing the time of a confirmed appointment must require patient approval");
+
+  const doctorStatusBeforeApproval = await request(`/api/doctor/appointments/${appointmentAId}/status`, {
+    token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
+  });
+  expectStatus(doctorStatusBeforeApproval, 409, "Doctor cannot change status while patient approval is pending");
+
+  const adminStatusBeforeApproval = await request(`/api/admin/appointments/${appointmentAId}/status`, {
+    token: admin.token, method: "PATCH", body: { status: "confirmed" }
+  });
+  expectStatus(adminStatusBeforeApproval, 409, "Admin cannot change status while patient approval is pending");
+
+  const patientAppointmentsBeforeApproval = await request("/api/my-appointments", { token: approvalPatientResult.data.token });
+  expectStatus(patientAppointmentsBeforeApproval, 200, "Patient can view their rescheduled appointment");
+  assert.ok(patientAppointmentsBeforeApproval.data.appointments.some(a =>
+    a.id === appointmentAId && a.reschedule_approval_required === true
+  ), "Patient appointment list must flag the changed time for approval");
+
+  // A different patient must not be able to approve someone else's appointment.
+  const unrelatedPatientUsername = `unrelated_patient_${suffix}`;
+  const unrelatedPatientResult = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: unrelatedPatientUsername,
+      full_name: "Unrelated Test Patient",
+      phone: `0000079${suffix.slice(0, 2)}`,
+      whatsapp_phone: `0000069${suffix.slice(0, 2)}`,
+      password: "UnrelatedPatientPass123"
+    }
+  });
+  expectStatus(unrelatedPatientResult, 200, "Register unrelated patient for ownership check");
+  const unauthorizedApproval = await request(`/api/my-appointments/${appointmentAId}/approve-reschedule`, {
+    token: unrelatedPatientResult.data.token,
+    method: "PATCH"
+  });
+  expectStatus(unauthorizedApproval, 409, "Different patient cannot approve this appointment");
+  const approvalAfterUnauthorizedAttempt = await pool.query(
+    "SELECT status,reschedule_approval_required FROM appointments WHERE id=$1",
+    [appointmentAId]
+  );
+  assert.equal(approvalAfterUnauthorizedAttempt.rows[0].status, "confirmed");
+  assert.equal(approvalAfterUnauthorizedAttempt.rows[0].reschedule_approval_required, true,
+    "Unauthorized approval attempt must leave patient approval pending");
+
+  const patientApprovesReschedule = await request(`/api/my-appointments/${appointmentAId}/approve-reschedule`, {
+    token: approvalPatientResult.data.token, method: "PATCH"
+  });
+  expectStatus(patientApprovesReschedule, 200, "Owning patient can approve the new appointment time");
+  assert.equal(patientApprovesReschedule.data.appointment.reschedule_approval_required, false,
+    "Patient approval must clear the pending approval flag");
+
+  const approvalAfterUpdate = await pool.query(
+    "SELECT status,reschedule_approval_required FROM appointments WHERE id=$1",
+    [appointmentAId]
+  );
+  assert.equal(approvalAfterUpdate.rows[0].status, "confirmed", "Patient approval must preserve confirmed status");
+  assert.equal(approvalAfterUpdate.rows[0].reschedule_approval_required, false);
+
 
   const rescheduledOutbox = await pool.query(
     "SELECT event_type,status,payload FROM notification_outbox WHERE appointment_id=$1",
@@ -272,6 +359,60 @@ async function main() {
       .every(row => row.status === "cancelled" || row.status === "sent"),
     "Rescheduling should invalidate unsent notifications for the old time"
   );
+
+  // Verify the admin reschedule route also requires approval for a confirmed appointment.
+  const adminApprovalPatientUsername = `admin_approval_patient_${suffix}`;
+  const adminApprovalPatientResult = await request("/api/patient/register", {
+    method: "POST",
+    body: {
+      username: adminApprovalPatientUsername,
+      full_name: "Admin Reschedule Test Patient",
+      phone: `0000059${suffix.slice(0, 2)}`,
+      whatsapp_phone: `0000049${suffix.slice(0, 2)}`,
+      sms_notifications_consent: true,
+      whatsapp_notifications_consent: true,
+      password: "AdminApprovalPatientPass123"
+    }
+  });
+  expectStatus(adminApprovalPatientResult, 200, "Register patient for admin reschedule test");
+  await pool.query(
+    "UPDATE appointments SET patient_id=(SELECT id FROM patients WHERE username=$2),status='confirmed' WHERE id=$1",
+    [appointmentBId, adminApprovalPatientUsername]
+  );
+  const adminReschedule = await request(`/api/admin/appointments/${appointmentBId}`, {
+    token: admin.token,
+    method: "PATCH",
+    body: { appointment_date: "2099-01-16", appointment_time: "10:30" }
+  });
+  expectStatus(adminReschedule, 200, "Admin can reschedule an appointment");
+  assert.equal(adminReschedule.data.appointment.reschedule_approval_required, true,
+    "Admin changing a confirmed appointment time must require patient approval");
+  assert.equal(String(adminReschedule.data.appointment.appointment_time).slice(0, 5), "10:30");
+
+  const adminRescheduledPatientAppointments = await request("/api/my-appointments", {
+    token: adminApprovalPatientResult.data.token
+  });
+  expectStatus(adminRescheduledPatientAppointments, 200, "Patient can see an admin-rescheduled appointment");
+  assert.ok(adminRescheduledPatientAppointments.data.appointments.some(a =>
+    a.id === appointmentBId && a.reschedule_approval_required === true
+  ), "Admin-rescheduled appointment must be marked as awaiting patient approval");
+
+  const adminRescheduledOutbox = await pool.query(
+    "SELECT event_type,status,payload FROM notification_outbox WHERE appointment_id=$1",
+    [appointmentBId]
+  );
+  assert.ok(
+    adminRescheduledOutbox.rows.some(row => row.event_type === "rescheduled" && row.status === "pending" &&
+      row.payload && String(row.payload.appointment_time).slice(0, 5) === "10:30"),
+    "Admin rescheduling should queue a notice for the new appointment time"
+  );
+  const patientApprovesAdminReschedule = await request(`/api/my-appointments/${appointmentBId}/approve-reschedule`, {
+    token: adminApprovalPatientResult.data.token,
+    method: "PATCH"
+  });
+  expectStatus(patientApprovesAdminReschedule, 200, "Owning patient can approve an admin-rescheduled appointment");
+  assert.equal(patientApprovesAdminReschedule.data.appointment.reschedule_approval_required, false);
+  assert.equal(patientApprovesAdminReschedule.data.appointment.status, "confirmed");
 
   // Preserve login compatibility for legacy patient hashes stored as "salt:hash".
   const legacyPatientUsername = `legacy_patient_${suffix}`;
@@ -578,7 +719,7 @@ async function main() {
   expectStatus(unauthenticated, 403, "Unauthenticated request is rejected by doctor portal guard");
 
   const statusAfterDeniedEdit = await pool.query("SELECT status FROM appointments WHERE id=$1", [appointmentBId]);
-  assert.equal(statusAfterDeniedEdit.rows[0].status, "pending", "Denied cross-doctor update must not change database row");
+  assert.equal(statusAfterDeniedEdit.rows[0].status, "confirmed", "Denied cross-doctor update must not change the confirmed status set by the admin-reschedule scenario");
 
   console.log("Integration checks passed: role boundaries, doctor-scoped appointments, schedule permissions, secretary permissions.");
 }
