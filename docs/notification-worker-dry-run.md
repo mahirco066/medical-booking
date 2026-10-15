@@ -12,11 +12,11 @@ This checklist is for reviewing the worker without delivering SMS or WhatsApp me
 
 ## Dry-run configuration (do not enable sending)
 
-If an isolated worker environment is approved for testing, use:
+Only proceed after an isolated test database has been explicitly prepared. Do not create a paid worker service or connect to production just to perform this check. If no isolated database is available, keep using the mocked database tests.
 
 - Build command: `npm install`
 - Start command: `node notification-worker.js`
-- `DATABASE_URL`: the existing Neon connection string, configured as a secret
+- `DATABASE_URL`: a dedicated, isolated test database connection string, configured as a secret. Never use the production Neon database for this test.
 - `NOTIFICATION_DRY_RUN`: `true`
 
 Do not set `NOTIFICATION_SEND_ENABLED=true`. Do not add Twilio credentials for a dry-run. Do not use the web service's `npm start` command for the worker, because that starts `server.js` instead.
@@ -30,4 +30,4 @@ Do not set `NOTIFICATION_SEND_ENABLED=true`. Do not add Twilio credentials for a
 
 ## Before real delivery
 
-Real delivery is a separate, explicitly approved change. It requires provider setup, verified consent and phone numbers, controlled test recipients, delivery/error monitoring, and a reviewed retry/duplicate-delivery policy. This checklist does not authorize sending messages.
+Real delivery is a separate, explicitly approved change. It requires provider setup, verified consent and phone numbers, controlled test recipients, delivery/error monitoring, and a reviewed retry/duplicate-delivery policy. This checklist does not authorize sending messages or connecting the worker to the production database.
