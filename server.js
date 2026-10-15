@@ -598,6 +598,7 @@ async function initDatabase() {
     ["appointments", "appointment_date", "DATE"],
     ["appointments", "appointment_time", "TIME"],
     ["appointments", "status", "TEXT NOT NULL DEFAULT 'pending'"],
+    ["appointments", "reschedule_approval_required", "BOOLEAN NOT NULL DEFAULT FALSE"],
     ["appointments", "notes", "TEXT"],
     ["appointments", "cancellation_reason", "TEXT"],
     ["appointments", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"],
@@ -1790,7 +1791,7 @@ app.get("/api/my-appointments", requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(
-      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id JOIN patients p ON p.id=a.patient_id WHERE p.user_id=$1 ORDER BY a.appointment_date DESC,a.appointment_time DESC",
+      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.reschedule_approval_required,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id JOIN patients p ON p.id=a.patient_id WHERE p.user_id=$1 ORDER BY a.appointment_date DESC,a.appointment_time DESC",
       [req.authUser.id]
     );
 
@@ -1801,6 +1802,24 @@ app.get("/api/my-appointments", requireAuth, async (req, res) => {
   }
 });
 
+app.patch("/api/my-appointments/:id/approve-reschedule", requireAuth, async (req, res) => {
+  try {
+    if (req.authUser.type !== "patient") {
+      return jsonError(res, 403, "هذا المسار مخصص للمرضى.");
+    }
+    const result = await pool.query(
+      "UPDATE appointments a SET reschedule_approval_required=FALSE, updated_at=NOW() FROM patients p WHERE a.id=$1 AND a.patient_id=p.id AND p.user_id=$2 AND a.status='confirmed' AND a.reschedule_approval_required=TRUE RETURNING a.*",
+      [req.params.id, req.authUser.id]
+    );
+    if (!result.rowCount) {
+      return jsonError(res, 409, "لا يوجد تعديل وقت بانتظار موافقتك لهذا الموعد.");
+    }
+    return jsonOk(res, { message: "تمت الموافقة على الوقت الجديد وأصبح الموعد مؤكدًا.", appointment: result.rows[0] });
+  } catch (error) {
+    console.error("Approve rescheduled appointment error:", error);
+    return jsonError(res, 500, "تعذر تسجيل موافقتك على الوقت الجديد.");
+  }
+});
 app.patch("/api/my-appointments/:id/cancel", requireAuth, async (req, res) => {
   try {
     if (req.authUser.type !== "patient") {
@@ -2639,7 +2658,7 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
     if(!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time))return jsonError(res,400,"وقت الموعد غير صحيح.");
 
     const current=await pool.query(
-      "SELECT id,patient_id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      "SELECT id,patient_id,status,appointment_date,appointment_time FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
       [req.params.id,req.authUser.doctor_id]
     );
     if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
@@ -2681,7 +2700,7 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
       }
 
       const updated = await client.query(
-        "UPDATE appointments SET appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        "UPDATE appointments SET reschedule_approval_required = CASE WHEN status='confirmed' AND (appointment_date IS DISTINCT FROM $1::date OR appointment_time IS DISTINCT FROM $2::time) THEN TRUE ELSE reschedule_approval_required END, appointment_date=$1::date,appointment_time=$2::time,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
         [date,time,req.params.id,req.authUser.doctor_id]
       );
       if (updated.rowCount) {
