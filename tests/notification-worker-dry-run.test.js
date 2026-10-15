@@ -48,3 +48,13 @@ test("scheduler routes dry-run ticks away from the delivery worker", () => {
   assert.match(section, /if \(DRY_RUN\) dryRunTick\(\);\s*else tick\(\);/);
   assert.match(section, /if \(DRY_RUN\) dryRunTick\(\);\s*else tick\(\);\s*$/);
 });
+
+
+test("ambiguous delivery outcomes and stale leases are not automatically retried", () => {
+  assert.match(workerSource, /uncertain\.deliveryOutcomeUnknown = true/);
+  assert.match(workerSource, /response\.status >= 500/);
+  assert.match(workerSource, /Provider accepted the request, but persistence failed/);
+  assert.match(workerSource, /attempts=" \+ MAX_ATTEMPTS/);
+  assert.match(workerSource, /if \(error && error\.deliveryOutcomeUnknown\)/);
+  assert.match(workerSource, /automatic retry suppressed to avoid a duplicate message/);
+});
