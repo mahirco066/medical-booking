@@ -1821,7 +1821,7 @@
                     <strong>تم تغيير وقت موعدك.</strong>
                     يرجى مراجعة التاريخ والوقت أعلاه والموافقة إذا كانا مناسبين لك.
                     <button type="button" data-approve-reschedule="${escapeHtml(appointment.id)}" style="display:block;margin-top:10px;width:100%;padding:10px;border:0;border-radius:8px;background:#0f766e;color:white;font-weight:700;cursor:pointer;">أوافق على الوقت الجديد</button>
-                    <button type="button" data-request-new-time="${escapeHtml(appointment.id)}" style="display:block;margin-top:8px;width:100%;padding:10px;border:1px solid #c2410c;border-radius:8px;background:white;color:#9a3412;font-weight:700;cursor:pointer;">الوقت لا يناسبني — أطلب وقتًا آخر</button>
+                    <button type="button" data-request-new-time="${escapeHtml(appointment.id)}" style="display:block;margin-top:8px;width:100%;padding:10px;border:1px solid #c2410c;border-radius:8px;background:white;color:#9a3412;font-weight:700;cursor:pointer;">الوقت لا يناسبني — أراجع العيادة</button>
                   </div>
                 `
                 : ""
@@ -1897,7 +1897,7 @@
       });
     });
     appointmentsModal.querySelectorAll("[data-request-new-time]").forEach((button) => {
-      button.addEventListener("click", () => notify("يرجى التواصل مع العيادة لاقتراح وقت بديل. لن يُعد الموعد مؤكدًا على الوقت الجديد حتى توافق عليه.", "info"));
+      button.addEventListener("click", () => notify("يرجى التواصل مع العيادة لاختيار وقت بديل. سيظل الوقت الجديد بانتظار موافقتك حتى يتم الاتفاق عليه.", "info"));
     });
     $("#editPatientContacts", appointmentsModal)?.addEventListener("click", openPatientContactEditor);
   }
