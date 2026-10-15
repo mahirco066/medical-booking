@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/doctor-secretary-portal]
+    branches: [feature/doctor-secretary-portal, feature/patient-reschedule-approval]
 
 jobs:
   browser:
