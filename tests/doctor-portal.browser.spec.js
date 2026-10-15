@@ -90,3 +90,79 @@ test("doctor and secretary see only the UI features allowed for their role", asy
   await expect(page.locator("#secretariesTab")).toBeHidden();
   await expect(page.locator("#appointmentsBody")).toBeVisible();
 });
+
+
+test("patient can review and approve a rescheduled confirmed appointment in the browser", async ({ page, request }) => {
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+  const username = `approval_patient_${suffix}`;
+  const password = "ApprovalPatientPass123";
+  let appointmentId;
+
+  try {
+    const admin = await apiRequest(request, "/api/staff/login", {
+      method: "POST",
+      body: { username: adminUsername, password: adminPassword }
+    });
+
+    const doctorResult = await apiRequest(request, "/api/admin/doctors", {
+      token: admin.token,
+      method: "POST",
+      body: { full_name: `Approval Browser Doctor ${suffix}`, specialty: "General", area: "Browser Test" }
+    });
+    const doctor = doctorResult.doctor;
+    expect(doctor && doctor.id).toBeTruthy();
+
+    const registration = await apiRequest(request, "/api/patient/register", {
+      method: "POST",
+      body: {
+        username,
+        full_name: "Approval Browser Patient",
+        phone: "0000000101",
+        whatsapp_phone: "0000000102",
+        password
+      }
+    });
+    expect(registration.patient && registration.patient.id).toBeTruthy();
+
+    const servicesResult = await apiRequest(request, "/api/services");
+    const services = Array.isArray(servicesResult) ? servicesResult : servicesResult.services;
+    expect(services && services.length, "at least one service should be seeded").toBeTruthy();
+    const service = services[0];
+
+    appointmentId = crypto.randomUUID();
+    const appointmentDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await pool.query(
+      `INSERT INTO appointments
+        (id, patient_id, doctor_id, service_id, patient_name, patient_phone, appointment_date, appointment_time, status, reschedule_approval_required)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'confirmed', TRUE)`,
+      [appointmentId, registration.patient.id, doctor.id, service.id, registration.patient.full_name, registration.patient.phone, appointmentDate, "10:30"]
+    );
+
+    await page.goto(new URL("/", baseURL).toString());
+    await page.getByRole("button", { name: "تسجيل الدخول" }).click();
+    await page.locator("#loginUsername").fill(username);
+    await page.locator("#loginPassword").fill(password);
+    await page.getByRole("button", { name: "تسجيل الدخول" }).last().click();
+
+    await expect(page.getByRole("button", { name: "مواعيدي" })).toBeVisible({ timeout: 10000 });
+    await page.getByRole("button", { name: "مواعيدي" }).click();
+    const appointmentsModal = page.locator("#appointmentsModal");
+    await expect(appointmentsModal).toContainText("بانتظار موافقتك على الوقت الجديد");
+    await expect(appointmentsModal.getByRole("button", { name: "أوافق على الوقت الجديد" })).toBeVisible();
+    await expect(appointmentsModal.getByRole("button", { name: "الوقت لا يناسبني — أراجع العيادة" })).toBeVisible();
+
+    await appointmentsModal.getByRole("button", { name: "أوافق على الوقت الجديد" }).click();
+    await expect(page.locator("#appointmentsModal")).not.toContainText("بانتظار موافقتك على الوقت الجديد", { timeout: 10000 });
+    await expect(page.locator("#appointmentsModal")).toContainText("مؤكد");
+    const saved = await pool.query("SELECT status, reschedule_approval_required FROM appointments WHERE id=$1", [appointmentId]);
+    expect(saved.rows[0]).toMatchObject({ status: "confirmed", reschedule_approval_required: false });
+  } finally {
+    if (appointmentId) {
+      await pool.query("DELETE FROM appointments WHERE id=$1", [appointmentId]).catch(() => {});
+    }
+    await pool.query("DELETE FROM users WHERE username=$1", [username]).catch(() => {});
+    await pool.end();
+  }
+});
