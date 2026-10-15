@@ -2628,10 +2628,13 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
       return jsonError(res,403,"يمكن للسكرتير تأكيد الموعد أو إلغاءه فقط.");
     }
     const current=await pool.query(
-      "SELECT id,status FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
+      "SELECT id,status,reschedule_approval_required FROM appointments WHERE id=$1 AND doctor_id=$2 LIMIT 1",
       [req.params.id,req.authUser.doctor_id]
     );
     if(!current.rowCount)return jsonError(res,404,"الموعد غير موجود ضمن مواعيد طبيبك.");
+    if(current.rows[0].reschedule_approval_required && status !== "cancelled"){
+      return jsonError(res,409,"لا يمكن تغيير حالة الموعد قبل موافقة المريض على الوقت الجديد.");
+    }
     if(!["pending","confirmed"].includes(current.rows[0].status)){
       return jsonError(res,409,"لا يمكن تغيير حالة موعد منتهٍ أو ملغى.");
     }
@@ -2828,6 +2831,17 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
       return jsonError(res, 400, "حالة الموعد غير صحيحة.");
     }
 
+    const currentAppointment = await pool.query(
+      "SELECT id,reschedule_approval_required FROM appointments WHERE id=$1 LIMIT 1",
+      [req.params.id]
+    );
+    if (!currentAppointment.rowCount) {
+      return jsonError(res, 404, "الموعد غير موجود.");
+    }
+    if (currentAppointment.rows[0].reschedule_approval_required && status !== "cancelled") {
+      return jsonError(res, 409, "لا يمكن تغيير حالة الموعد قبل موافقة المريض على الوقت الجديد.");
+    }
+
     const cancellationReason =
       clean(req.body.cancellation_reason) || null;
 
@@ -2873,7 +2887,7 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
     }
 
     const currentResult = await pool.query(
-      "SELECT id,doctor_id,patient_id FROM appointments WHERE id=$1 LIMIT 1",
+      "SELECT id,doctor_id,patient_id,status,appointment_date,appointment_time FROM appointments WHERE id=$1 LIMIT 1",
       [req.params.id]
     );
     if (!currentResult.rowCount) return jsonError(res, 404, "الموعد غير موجود.");
@@ -2899,7 +2913,13 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
 
       const updated = await client.query(
         `UPDATE appointments
-         SET appointment_date = $1::date,
+         SET reschedule_approval_required = CASE
+               WHEN status='confirmed'
+                 AND (appointment_date IS DISTINCT FROM $1::date OR appointment_time IS DISTINCT FROM $2::time)
+               THEN TRUE
+               ELSE reschedule_approval_required
+             END,
+             appointment_date = $1::date,
              appointment_time = $2::time,
              updated_at = NOW()
          WHERE id = $3
