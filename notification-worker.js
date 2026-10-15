@@ -133,8 +133,8 @@ async function claimOne() {
     // Recover claims left behind by a worker that crashed or was restarted.
     // Older rows with no lease timestamp are recovered too.
     await client.query(
-      "UPDATE notification_outbox SET status='failed',locked_at=NULL," +
-      " scheduled_at=NOW(),last_error='Recovered stale processing lease.',updated_at=NOW()" +
+      "UPDATE notification_outbox SET status='failed',attempts=" + MAX_ATTEMPTS + ",locked_at=NULL," +
+      " last_error='Recovered stale processing lease; delivery outcome unknown, automatic retry suppressed.',updated_at=NOW()" +
       " WHERE status='processing' AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')"
     );
 
@@ -221,7 +221,14 @@ async function processOne() {
       return true;
     }
     const sid = await sendTwilioMessage(row);
-    await finish(row, "sent", null, new Date(), sid);
+    try {
+      await finish(row, "sent", null, new Date(), sid);
+    } catch (error) {
+      // Provider accepted the request, but persistence failed. Do not route this
+      // through the ordinary retry path; stale-lease recovery also suppresses retry.
+      error.deliveryOutcomeUnknown = true;
+      throw error;
+    }
     return true;
   } catch (error) {
     const message = String(error && error.message ? error.message : error).slice(0, 500);
