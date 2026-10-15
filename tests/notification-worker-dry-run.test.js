@@ -46,5 +46,5 @@ test("scheduler routes dry-run ticks away from the delivery worker", () => {
   assert.notEqual(end, -1);
   const section = workerSource.slice(start, end);
   assert.match(section, /if \(DRY_RUN\) dryRunTick\(\);\s*else tick\(\);/);
-  assert.match(section, /if \(DRY_RUN\) dryRunTick\(\);\s*else tick\(\);/);
+  assert.match(section, /if \(DRY_RUN\) dryRunTick\(\);\s*else tick\(\);\s*$/);
 });
