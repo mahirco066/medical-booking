@@ -17,7 +17,7 @@ const workerSource = fs.readFileSync(
 function outboxTableDefinition() {
   const start = serverSource.indexOf("CREATE TABLE IF NOT EXISTS notification_outbox");
   assert.notEqual(start, -1, "server.js must define notification_outbox");
-  const end = serverSource.indexOf("\n  \`);", start);
+  const end = serverSource.indexOf("\n  `);", start);
   assert.notEqual(end, -1, "notification_outbox definition must terminate");
   return serverSource.slice(start, end);
 }
