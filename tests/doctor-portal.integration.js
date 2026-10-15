@@ -297,7 +297,8 @@ async function main() {
   });
   expectStatus(adminStatusBeforeApproval, 409, "Admin cannot change status while patient approval is pending");
 
-  const patientAppointmentsBeforeApproval = await request("/api/my-appointments", { token: approvalPatientResult.data.token });  expectStatus(patientAppointmentsBeforeApproval, 200, "Patient can view their rescheduled appointment");
+  const patientAppointmentsBeforeApproval = await request("/api/my-appointments", { token: approvalPatientResult.data.token });
+  expectStatus(patientAppointmentsBeforeApproval, 200, "Patient can view their rescheduled appointment");
   assert.ok(patientAppointmentsBeforeApproval.data.appointments.some(a =>
     a.id === appointmentAId && a.reschedule_approval_required === true
   ), "Patient appointment list must flag the changed time for approval");
@@ -596,7 +597,8 @@ async function main() {
     queuedNotifications.rows.some(row => row.recipient_phone === "+249900000301"),
     false,
     "Disabled secretaries must not receive queued notifications"
-  );  assert.equal(
+  );
+  assert.equal(
     queuedNotifications.rows.some(row => row.recipient_phone === "+249900000102"),
     false,
     "A different doctor's contact number must not receive this appointment's notification"
