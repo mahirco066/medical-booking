@@ -2615,7 +2615,7 @@ app.get("/api/doctor/appointments", requireDoctorOrSecretary, async (req, res) =
     const date=clean(req.query.date||""), status=clean(req.query.status||"");
     if(date && validDate(date)){conditions.push("a.appointment_date=$"+n++);values.push(date);}
     if(status){conditions.push("a.status=$"+n++);values.push(status);}
-    const r=await pool.query("SELECT a.id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,s.name AS service_name,s.price FROM appointments a LEFT JOIN services s ON s.id=a.service_id WHERE "+conditions.join(" AND ")+" ORDER BY a.appointment_date ASC,a.appointment_time ASC",values);
+    const r=await pool.query("SELECT a.id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.reschedule_approval_required,a.notes,a.cancellation_reason,a.created_at,s.name AS service_name,s.price FROM appointments a LEFT JOIN services s ON s.id=a.service_id WHERE "+conditions.join(" AND ")+" ORDER BY a.appointment_date ASC,a.appointment_time ASC",values);
     return jsonOk(res,{appointments:r.rows});
   } catch(e){console.error("Doctor appointments error:",e);return jsonError(res,500,"تعذر تحميل مواعيد الطبيب.");}
 });
@@ -2797,7 +2797,7 @@ app.get("/api/admin/appointments", requireAdmin, async (req, res) => {
       : "";
 
     const result = await pool.query(
-      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price,p.email AS patient_email FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id LEFT JOIN patients p ON p.id=a.patient_id " +
+      "SELECT a.id,a.patient_id,a.doctor_id,a.service_id,a.patient_name,a.patient_phone,a.appointment_date,a.appointment_time,a.status,a.reschedule_approval_required,a.notes,a.cancellation_reason,a.created_at,a.updated_at,d.full_name AS doctor_name,d.specialty,s.name AS service_name,s.price,p.email AS patient_email FROM appointments a LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN services s ON s.id=a.service_id LEFT JOIN patients p ON p.id=a.patient_id " +
         where +
         " ORDER BY a.appointment_date DESC,a.appointment_time DESC",
       values
