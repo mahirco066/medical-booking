@@ -2641,7 +2641,7 @@ app.patch("/api/doctor/appointments/:id/status", requireDoctorOrSecretary, async
     const reason=clean(req.body.cancellation_reason||"")||null;
     const r=await withDatabaseTransaction(async (client) => {
       const updated = await client.query(
-        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') RETURNING *",
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND doctor_id=$4 AND status IN ('pending','confirmed') AND ($1='cancelled' OR reschedule_approval_required=FALSE) RETURNING *",
         [status,status==="cancelled"?reason:null,req.params.id,req.authUser.doctor_id]
       );
       if (updated.rowCount && (status === "cancelled" || status === "confirmed")) {
@@ -2847,7 +2847,7 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
 
     const result = await withDatabaseTransaction(async (client) => {
       const updated = await client.query(
-        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 RETURNING *",
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND ($1='cancelled' OR reschedule_approval_required=FALSE) RETURNING *",
         [
           status,
           status === "cancelled" ? cancellationReason : null,
