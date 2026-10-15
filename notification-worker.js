@@ -28,7 +28,11 @@ if (DRY_RUN) {
   console.log("Notification worker started in DRY RUN mode. No messages will be claimed or sent.");
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "test" ? false : { rejectUnauthorized: false },
+  max: 3
+});
 const SID = process.env.TWILIO_ACCOUNT_SID;
 const TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const INTERVAL_MS = 5000;
