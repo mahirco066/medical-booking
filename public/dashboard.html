@@ -530,7 +530,13 @@ function renderAppointments(appointments){
                   onclick="confirmAppointment('${escapeHtml(appointment.id)}')">
                   تأكيد
                 </button>
+              `
+              : ""
+          }
 
+          ${
+            status === "pending" || status === "confirmed"
+              ? `
                 <button
                   class="action-btn disable-btn"
                   type="button"
