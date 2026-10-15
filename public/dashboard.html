@@ -464,7 +464,9 @@ function renderAppointments(appointments){
 
     let statusHtml = "";
 
-    else if (status === "pending") {
+    if (appointment.reschedule_approval_required === true) {
+      statusHtml = `<span class="badge" style="background:#ffedd5;color:#9a3412">بانتظار موافقة المريض على الوقت الجديد</span>`;
+    } else if (status === "pending") {
       statusHtml = `<span class="badge" style="background:#fef3c7;color:#92400e">في انتظار التأكيد</span>`;
     } else if (status === "confirmed") {
       statusHtml = `<span class="badge badge-green">مؤكد</span>`;
