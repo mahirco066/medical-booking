@@ -290,12 +290,12 @@ async function main() {
   const doctorStatusBeforeApproval = await request(`/api/doctor/appointments/${appointmentAId}/status`, {
     token: doctorAUser.token, method: "PATCH", body: { status: "confirmed" }
   });
-  expectStatus(doctorStatusBeforeApproval, 403, "Doctor cannot change status while patient approval is pending");
+  expectStatus(doctorStatusBeforeApproval, 409, "Doctor cannot change status while patient approval is pending");
 
   const adminStatusBeforeApproval = await request(`/api/admin/appointments/${appointmentAId}/status`, {
     token: admin.token, method: "PATCH", body: { status: "confirmed" }
   });
-  expectStatus(adminStatusBeforeApproval, 403, "Admin cannot change status while patient approval is pending");
+  expectStatus(adminStatusBeforeApproval, 409, "Admin cannot change status while patient approval is pending");
 
   const patientAppointmentsBeforeApproval = await request("/api/my-appointments", { token: approvalPatientResult.data.token });
   expectStatus(patientAppointmentsBeforeApproval, 200, "Patient can view their rescheduled appointment");
