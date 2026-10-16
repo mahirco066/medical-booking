@@ -56,6 +56,9 @@ jobs:
           cat /tmp/medical-booking-worker-test.log
           echo "Test server did not become ready in time."
           exit 1
+      - name: Snapshot the complete notification outbox before dry-run
+        run: |
+          node -e 'const {Pool}=require("pg"); (async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL}); try {const r=await p.query("SELECT COALESCE(jsonb_agg(to_jsonb(n) ORDER BY n.id), '\''[]'\''::jsonb)::text AS snapshot FROM notification_outbox n"); process.stdout.write(r.rows[0].snapshot);} finally {await p.end();}})().catch(e=>{console.error(e);process.exit(1)})' > /tmp/outbox-before.json
       - name: Verify worker dry-run reads the outbox without sending messages
         run: |
           NOTIFICATION_DRY_RUN=true node notification-worker.js > /tmp/notification-worker-dry-run.log 2>&1 &
@@ -83,6 +86,15 @@ jobs:
           fi
           kill -TERM "$worker_pid"
           wait "$worker_pid"
+      - name: Verify the complete notification outbox is unchanged
+        run: |
+          node -e 'const {Pool}=require("pg"); (async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL}); try {const r=await p.query("SELECT COALESCE(jsonb_agg(to_jsonb(n) ORDER BY n.id), '\''[]'\''::jsonb)::text AS snapshot FROM notification_outbox n"); process.stdout.write(r.rows[0].snapshot);} finally {await p.end();}})().catch(e=>{console.error(e);process.exit(1)})' > /tmp/outbox-after.json
+          if ! cmp -s /tmp/outbox-before.json /tmp/outbox-after.json; then
+            echo "ERROR: notification_outbox changed during dry-run."
+            diff -u /tmp/outbox-before.json /tmp/outbox-after.json || true
+            exit 1
+          fi
+          echo "PASS: every notification_outbox row and field remained unchanged."
       - name: Show logs if integration test fails
         if: failure()
         run: |
