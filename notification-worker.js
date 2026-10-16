@@ -123,7 +123,12 @@ async function sendTwilioMessage(row) {
     }
     throw error;
   }
-  return data.sid || null;
+  if (!data.sid) {
+    const error = new Error("Provider returned success without a message SID; delivery outcome is unclear, automatic retry suppressed.");
+    error.deliveryOutcomeUnknown = true;
+    throw error;
+  }
+  return data.sid;
 }
 
 async function claimOne() {
