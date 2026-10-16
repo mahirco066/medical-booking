@@ -60,3 +60,14 @@ test("ambiguous delivery outcomes and stale leases are not automatically retried
   assert.match(workerSource, /if \(error && error\.deliveryOutcomeUnknown\)/);
   assert.match(workerSource, /automatic retry suppressed to avoid a duplicate message/);
 });
+
+test("successful provider send is treated as unknown if the guarded status update affects no row", () => {
+  assert.match(
+    workerSource,
+    /if \(result\.rowCount !== 1\)\s*\{\s*const error = new Error\("Notification status update affected no row; delivery outcome must be treated as unknown\."\);\s*if \(status === "sent"\) error\.deliveryOutcomeUnknown = true;\s*throw error;\s*\}/
+  );
+  assert.match(
+    workerSource,
+    /WHERE id=\$1 AND status='processing' AND locked_at=\$8::timestamptz/
+  );
+});
