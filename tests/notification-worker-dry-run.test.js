@@ -122,9 +122,12 @@ test("worker skips a queued notification that is no longer relevant before provi
   const section = workerSource.slice(start, end);
   assert.match(section, /if\s*\(\s*!\s*\(\s*await isNotificationStillRelevant\(row\)\s*\)\s*\)/);
   assert.match(section, /await finish\(row, "cancelled"/);
+  const relevanceCheckIndex = section.indexOf("if (!(await isNotificationStillRelevant(row)))");
+  const providerCallIndex = section.indexOf("await sendTwilioMessage(row)");
+  assert.notEqual(relevanceCheckIndex, -1, "pre-send relevance guard must exist");
+  assert.notEqual(providerCallIndex, -1, "provider call must exist");
   assert.ok(
-    section.indexOf("if (!await isNotificationStillRelevant(row))") <
-      section.indexOf("await sendTwilioMessage(row)"),
+    relevanceCheckIndex < providerCallIndex,
     "relevance check must run before calling the provider"
   );
 });
