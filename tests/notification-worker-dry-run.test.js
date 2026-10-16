@@ -100,3 +100,31 @@ test("notification enqueue remains idempotent and leaves sent rows as history", 
   assert.match(serverSource, /Keep already-sent rows as an audit trail/);
   assert.match(serverSource, /status IN \('pending','failed'\)/);
 });
+
+test("worker checks current patient consent and phone before delivery", () => {
+  const start = workerSource.indexOf("async function isNotificationStillRelevant");
+  const end = workerSource.indexOf("async function processOne", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const section = workerSource.slice(start, end);
+  assert.match(section, /isPatientChannelConsented\(/);
+  assert.match(section, /current_patient_sms_phone/);
+  assert.match(section, /current_patient_whatsapp_phone/);
+  assert.match(section, /String\(currentPhone\)\.trim\(\) !== String\(row\.recipient_phone \|\| ""\)\.trim\(\)/);
+  assert.match(section, /return isNotificationRelevant\(/);
+});
+
+test("worker skips a queued notification that is no longer relevant before provider delivery", () => {
+  const start = workerSource.indexOf("async function processOne");
+  const end = workerSource.indexOf("async function tick", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const section = workerSource.slice(start, end);
+  assert.match(section, /if \(!await isNotificationStillRelevant\(row\)\)/);
+  assert.match(section, /await finish\(row, "cancelled"/);
+  assert.ok(
+    section.indexOf("if (!await isNotificationStillRelevant(row))") <
+      section.indexOf("await sendTwilioMessage(row)"),
+    "relevance check must run before calling the provider"
+  );
+});
