@@ -169,12 +169,19 @@ async function claimOne() {
 async function finish(row, status, errorText, sentAt, providerMessageId) {
   const attempts = Number(row.attempts || 0) + 1;
   const delaySeconds = Math.min(3600, 30 * Math.pow(2, Math.max(0, attempts - 1)));
-  await pool.query(
+  const result = await pool.query(
     "UPDATE notification_outbox SET status=$2,last_error=$3,sent_at=$4,provider_message_id=$5,locked_at=NULL," +
     " scheduled_at=CASE WHEN $2='failed' AND attempts < $6 THEN NOW() + ($7 * INTERVAL '1 second') ELSE scheduled_at END," +
     " updated_at=NOW() WHERE id=$1 AND status='processing' AND locked_at=$8::timestamptz",
     [row.id, status, errorText || null, sentAt || null, providerMessageId || null, MAX_ATTEMPTS, delaySeconds, row.lease_token]
   );
+  // A query can succeed without updating the row if the lease/state no longer matches.
+  // Treat a missing acknowledgement after provider acceptance as an unknown outcome.
+  if (result.rowCount !== 1) {
+    const error = new Error("Notification status update affected no row; delivery outcome must be treated as unknown.");
+    if (status === "sent") error.deliveryOutcomeUnknown = true;
+    throw error;
+  }
 }
 
 async function isNotificationStillRelevant(row) {
