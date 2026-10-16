@@ -28,6 +28,13 @@ Do not set `NOTIFICATION_SEND_ENABLED=true`. Do not add Twilio credentials for a
 3. No Twilio request is made and no outbox row changes status, attempts, timestamps, or provider fields.
 4. Stop the worker if the table is missing or the database connection fails; investigate before any real delivery is considered.
 
+## Ambiguous delivery outcomes and manual review
+
+- A network timeout, connection failure, provider HTTP 5xx, successful response without a provider message SID, or database failure while recording a provider acceptance is treated as an uncertain outcome.
+- To avoid automatic duplicate messages, the worker exhausts the retry budget for an uncertain outcome. Stale `processing` leases are also marked failed with the retry budget exhausted rather than re-queued automatically.
+- These rows need manual reconciliation against the provider's message logs before any retry. Do not reset `attempts`, change the status to `pending`, or resend merely because the row is marked `failed`: `failed` can mean delivery is unknown, not that the provider definitely rejected it.
+- This is a conservative duplicate-prevention measure, not a guarantee of exactly-once delivery. It can leave a notification unsent until a person reconciles it.
+
 ## Before real delivery
 
-Real delivery is a separate, explicitly approved change. It requires provider setup, verified consent and phone numbers, controlled test recipients, delivery/error monitoring, and a reviewed retry/duplicate-delivery policy. This checklist does not authorize sending messages or connecting the worker to the production database.
+Real delivery is a separate, explicitly approved change. It requires provider setup, verified consent and phone numbers, controlled test recipients, delivery/error monitoring, a documented manual reconciliation process, and a reviewed retry/duplicate-delivery policy. This checklist does not authorize sending messages or connecting the worker to the production database.
