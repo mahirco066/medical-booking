@@ -120,7 +120,7 @@ test("worker skips a queued notification that is no longer relevant before provi
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const section = workerSource.slice(start, end);
-  assert.match(section, /if \(!await isNotificationStillRelevant\(row\)\)/);
+  assert.match(section, /if\s*\(\s*!\s*\(\s*await isNotificationStillRelevant\(row\)\s*\)\s*\)/);
   assert.match(section, /await finish\(row, "cancelled"/);
   assert.ok(
     section.indexOf("if (!await isNotificationStillRelevant(row))") <
