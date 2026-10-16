@@ -131,3 +131,26 @@ test("worker skips a queued notification that is no longer relevant before provi
     "relevance check must run before calling the provider"
   );
 });
+
+test("cancellation and rescheduling invalidate only retryable unsent rows, not in-flight or sent audit rows", () => {
+  const invalidations = [
+    ...serverSource.matchAll(
+      /UPDATE notification_outbox\\s+SET status='cancelled',locked_at=NULL,updated_at=NOW\\(\\)\\s+WHERE appointment_id=\\$1[\\s\\S]*?status IN \\('pending','failed'\\)`/g
+    )
+  ].map((match) => match[0]);
+
+  assert.equal(
+    invalidations.length,
+    3,
+    "booking confirmation, cancellation, and rescheduling invalidations must all be covered"
+  );
+
+  for (const statement of invalidations) {
+    assert.match(statement, /status IN \\('pending','failed'\\)/);
+    assert.doesNotMatch(
+      statement,
+      /status\\s*=\\s*'processing'|status IN \\([^)]*processing/i,
+      "an in-flight delivery must not be force-cancelled while provider outcome may be unknown"
+    );
+  }
+});
