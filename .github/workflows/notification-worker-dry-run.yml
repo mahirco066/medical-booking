@@ -1,0 +1,108 @@
+name: Notification worker dry-run integration
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/notification-worker-dry-run]
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: medical_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d medical_booking_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/medical_booking_test
+      PORT: 18081
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: TestAdminPass123
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install app dependencies
+        run: npm install --no-audit --no-fund
+      - name: Start app to initialize the temporary test database
+        run: |
+          node server.js > /tmp/medical-booking-worker-test.log 2>&1 &
+          echo $! > /tmp/medical-booking-worker-test.pid
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:18081/api/services > /dev/null; then
+              echo "Test server initialized the database."
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/medical-booking-worker-test.pid)" 2>/dev/null; then
+              cat /tmp/medical-booking-worker-test.log
+              exit 1
+            fi
+            sleep 2
+          done
+          cat /tmp/medical-booking-worker-test.log
+          echo "Test server did not become ready in time."
+          exit 1
+      - name: Snapshot the complete notification outbox before dry-run
+        run: |
+          node -e 'const {Pool}=require("pg"); (async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL}); try {const r=await p.query("SELECT COALESCE(jsonb_agg(to_jsonb(n) ORDER BY n.id), '\''[]'\''::jsonb)::text AS snapshot FROM notification_outbox n"); process.stdout.write(r.rows[0].snapshot);} finally {await p.end();}})().catch(e=>{console.error(e);process.exit(1)})' > /tmp/outbox-before.json
+      - name: Verify worker dry-run reads the outbox without sending messages
+        run: |
+          NOTIFICATION_DRY_RUN=true node notification-worker.js > /tmp/notification-worker-dry-run.log 2>&1 &
+          worker_pid=$!
+          for attempt in $(seq 1 20); do
+            if grep -q "DRY RUN queue summary" /tmp/notification-worker-dry-run.log 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$worker_pid" 2>/dev/null; then
+              cat /tmp/notification-worker-dry-run.log
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/notification-worker-dry-run.log
+          if ! grep -q "DRY RUN queue summary" /tmp/notification-worker-dry-run.log; then
+            echo "Worker did not report a successful dry-run queue summary."
+            kill "$worker_pid" 2>/dev/null || true
+            exit 1
+          fi
+          if grep -q "DRY RUN check failed" /tmp/notification-worker-dry-run.log; then
+            echo "Worker reported a database failure during dry-run."
+            kill "$worker_pid" 2>/dev/null || true
+            exit 1
+          fi
+          kill -TERM "$worker_pid"
+          wait "$worker_pid"
+      - name: Verify the complete notification outbox is unchanged
+        run: |
+          node -e 'const {Pool}=require("pg"); (async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL}); try {const r=await p.query("SELECT COALESCE(jsonb_agg(to_jsonb(n) ORDER BY n.id), '\''[]'\''::jsonb)::text AS snapshot FROM notification_outbox n"); process.stdout.write(r.rows[0].snapshot);} finally {await p.end();}})().catch(e=>{console.error(e);process.exit(1)})' > /tmp/outbox-after.json
+          if ! cmp -s /tmp/outbox-before.json /tmp/outbox-after.json; then
+            echo "ERROR: notification_outbox changed during dry-run."
+            diff -u /tmp/outbox-before.json /tmp/outbox-after.json || true
+            exit 1
+          fi
+          echo "PASS: every notification_outbox row and field remained unchanged."
+      - name: Show logs if integration test fails
+        if: failure()
+        run: |
+          cat /tmp/medical-booking-worker-test.log || true
+          cat /tmp/notification-worker-dry-run.log || true
+      - name: Stop test server
+        if: always()
+        run: |
+          if [ -f /tmp/medical-booking-worker-test.pid ]; then
+            kill "$(cat /tmp/medical-booking-worker-test.pid)" 2>/dev/null || true
+          fi
