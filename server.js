@@ -157,10 +157,10 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
             d.full_name AS doctor_name,
             d.phone AS doctor_phone,
             COALESCE(
-              (SELECT su.whatsapp_phone FROM staff_users su
+              (SELECT NULLIF(BTRIM(su.whatsapp_phone),'') FROM staff_users su
                 WHERE su.doctor_id=d.id AND su.role='doctor' AND su.active=TRUE
                 ORDER BY su.created_at LIMIT 1),
-              du.whatsapp_phone
+              NULLIF(BTRIM(du.whatsapp_phone),'')
             ) AS doctor_whatsapp
        FROM appointments a
        LEFT JOIN patients p ON p.id=a.patient_id
