@@ -45,8 +45,14 @@ function runWorkerWithMockDatabase(shouldFail) {
     };
     global.setInterval = () => ({ mockedInterval: true });
     global.clearInterval = () => {};
+    global.fetch = () => { throw new Error("unexpected provider call during dry-run"); };
     process.env.DATABASE_URL = "postgres://mock.invalid/test";
     process.env.NOTIFICATION_DRY_RUN = "true";
+    // Even accidental live-send configuration must not override dry-run mode.
+    process.env.TWILIO_ACCOUNT_SID = "AC_TEST";
+    process.env.TWILIO_AUTH_TOKEN = "test-token";
+    process.env.NOTIFICATION_SEND_ENABLED = "true";
+    process.env.TWILIO_SMS_FROM = "+15555550100";
     process.env.MOCK_DB_FAIL = ${JSON.stringify(shouldFail ? "true" : "false")};
 
     require(${JSON.stringify(workerPath)});
