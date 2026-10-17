@@ -430,7 +430,7 @@ async function initDatabase() {
     CREATE TABLE IF NOT EXISTS notification_outbox (
       id UUID PRIMARY KEY,
       appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
-      event_type TEXT NOT NULL CHECK (event_type IN ('booked','confirmed','cancelled','rescheduled','reminder_24h')),
+      event_type TEXT NOT NULL CHECK (event_type IN ('booked','confirmed','cancelled','rescheduled','reschedule_requested','reminder_24h')),
       channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp')),
       recipient_role TEXT NOT NULL CHECK (recipient_role IN ('patient','doctor','secretary')),
       recipient_phone TEXT NOT NULL,
@@ -446,6 +446,30 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+
+  // Migrate existing installations to accept the distinct pending-reschedule event.
+  await pool.query(`
+    DO $
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'notification_outbox_event_type_check'
+           AND conrelid = 'notification_outbox'::regclass
+           AND pg_get_constraintdef(oid) NOT LIKE '%reschedule_requested%'
+      ) THEN
+        ALTER TABLE notification_outbox DROP CONSTRAINT notification_outbox_event_type_check;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'notification_outbox_event_type_check'
+           AND conrelid = 'notification_outbox'::regclass
+      ) THEN
+        ALTER TABLE notification_outbox
+          ADD CONSTRAINT notification_outbox_event_type_check
+          CHECK (event_type IN ('booked','confirmed','cancelled','reschedule_requested','rescheduled','reminder_24h'));
+      END IF;
+    END $;
   `);
 
   await pool.query(`
