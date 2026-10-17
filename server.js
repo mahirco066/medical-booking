@@ -2711,7 +2711,7 @@ app.patch("/api/doctor/appointments/:id", requireDoctorOrSecretary, async (req,r
         [date,time,req.params.id,req.authUser.doctor_id]
       );
       if (updated.rowCount) {
-        await enqueueAppointmentNotifications(updated.rows[0].id, "rescheduled", client);
+        await enqueueAppointmentNotifications(updated.rows[0].id, updated.rows[0].reschedule_approval_required ? "reschedule_requested" : "rescheduled", client);
       }
       return updated;
     });
@@ -2931,7 +2931,7 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
         [appointmentDate, appointmentTime, req.params.id]
       );
       if (updated.rowCount) {
-        await enqueueAppointmentNotifications(updated.rows[0].id, "rescheduled", client);
+        await enqueueAppointmentNotifications(updated.rows[0].id, updated.rows[0].reschedule_approval_required ? "reschedule_requested" : "rescheduled", client);
       }
       return updated;
     });
