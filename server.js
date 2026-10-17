@@ -448,29 +448,17 @@ async function initDatabase() {
     )
   `);
 
-  // Migrate existing installations to accept the distinct pending-reschedule event.
-  await pool.query(`
-    DO $
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM pg_constraint
-         WHERE conname = 'notification_outbox_event_type_check'
-           AND conrelid = 'notification_outbox'::regclass
-           AND pg_get_constraintdef(oid) NOT LIKE '%reschedule_requested%'
-      ) THEN
-        ALTER TABLE notification_outbox DROP CONSTRAINT notification_outbox_event_type_check;
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-         WHERE conname = 'notification_outbox_event_type_check'
-           AND conrelid = 'notification_outbox'::regclass
-      ) THEN
-        ALTER TABLE notification_outbox
-          ADD CONSTRAINT notification_outbox_event_type_check
-          CHECK (event_type IN ('booked','confirmed','cancelled','reschedule_requested','rescheduled','reminder_24h'));
-      END IF;
-    END $;
-  `);
+  // Migrate existing installations only when the event constraint is outdated.
+  const eventConstraint = await pool.query(
+    "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname=$1 AND conrelid='notification_outbox'::regclass LIMIT 1",
+    ["notification_outbox_event_type_check"]
+  );
+  if (!eventConstraint.rowCount || !eventConstraint.rows[0].definition.includes("reschedule_requested")) {
+    await pool.query("ALTER TABLE notification_outbox DROP CONSTRAINT IF EXISTS notification_outbox_event_type_check");
+    await pool.query(
+      "ALTER TABLE notification_outbox ADD CONSTRAINT notification_outbox_event_type_check CHECK (event_type IN ('booked','confirmed','cancelled','reschedule_requested','rescheduled','reminder_24h'))"
+    );
+  }
 
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_notification_outbox_due
