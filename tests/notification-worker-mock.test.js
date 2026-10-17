@@ -102,3 +102,36 @@ test("dry-run closes the pool and marks failure with a mocked database error", (
   assert.match(result.stdout, /MOCK_TEST_PASS:failure/);
   assert.match(result.stderr, /DRY RUN check failed/);
 });
+
+function runWorkerStartup(envOverrides) {
+  return spawnSync(process.execPath, ["-e", `require(${JSON.stringify(workerPath)});`], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      DATABASE_URL: "postgres://mock.invalid/test",
+      NOTIFICATION_DRY_RUN: "false",
+      TWILIO_ACCOUNT_SID: "AC_TEST",
+      TWILIO_AUTH_TOKEN: "test-token",
+      NOTIFICATION_SEND_ENABLED: "false",
+      TWILIO_SMS_FROM: "+15555550100",
+      ...envOverrides
+    },
+    timeout: 5000
+  });
+}
+
+test("worker refuses live delivery unless the explicit send flag is true", () => {
+  const result = runWorkerStartup({ NOTIFICATION_SEND_ENABLED: "false" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Set NOTIFICATION_SEND_ENABLED=true/);
+});
+
+test("worker refuses to start with WhatsApp configuration alone", () => {
+  const result = runWorkerStartup({
+    NOTIFICATION_SEND_ENABLED: "true",
+    TWILIO_SMS_FROM: "",
+    TWILIO_WHATSAPP_FROM: "whatsapp:+15555550100"
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /WhatsApp delivery is not enabled yet/);
+});
