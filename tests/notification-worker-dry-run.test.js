@@ -12,7 +12,7 @@ const workerSource = fs.readFileSync(
 
 function dryRunSection() {
   const start = workerSource.indexOf("async function dryRunTick()");
-  const end = workerSource.indexOf("const timer = setInterval", start);
+  const end = workerSource.indexOf('if (process.env.NOTIFICATION_WORKER_TEST_MODE === "true")', start);
   assert.notEqual(start, -1, "dryRunTick must exist");
   assert.notEqual(end, -1, "dry-run scheduler must exist");
   return workerSource.slice(start, end);
