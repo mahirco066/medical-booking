@@ -38,3 +38,9 @@ Do not set `NOTIFICATION_SEND_ENABLED=true`. Do not add Twilio credentials for a
 ## Before real delivery
 
 Real delivery is a separate, explicitly approved change. It requires provider setup, verified consent and phone numbers, controlled test recipients, delivery/error monitoring, a documented manual reconciliation process, and a reviewed retry/duplicate-delivery policy. This checklist does not authorize sending messages or connecting the worker to the production database.
+## Concurrent appointment changes
+
+- The worker re-checks appointment status, slot, patient consent, and the current patient phone immediately before calling the messaging provider.
+- A small race remains between that final database read and the provider accepting the message: an appointment can be cancelled or rescheduled during that interval. The worker does not hold a database transaction open across the network request, because doing so could block appointment updates for the provider timeout window.
+- Therefore the pre-send check reduces stale notifications but cannot guarantee that no message is sent during a simultaneous cancellation/reschedule. Do not describe delivery as exactly-once or race-free. For any reported stale message, reconcile the outbox row against the provider message log and appointment audit trail.
+- A future stronger guarantee would require provider-supported idempotency/cancellation semantics or a separately designed delivery protocol; do not attempt to solve this by force-cancelling a `processing` row while a provider request may be in flight.
