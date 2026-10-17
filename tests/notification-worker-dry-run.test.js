@@ -113,6 +113,21 @@ test("worker checks current patient consent and phone before delivery", () => {
   assert.match(section, /return isNotificationRelevant\(/);
 });
 
+test("worker rejects stale doctor and secretary contact numbers before delivery", () => {
+  const start = workerSource.indexOf("async function isNotificationStillRelevant");
+  const end = workerSource.indexOf("async function processOne", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const section = workerSource.slice(start, end);
+  assert.match(section, /current_doctor_sms_phone/);
+  assert.match(section, /current_doctor_whatsapp_phone/);
+  assert.match(section, /row\.recipient_role === "doctor"/);
+  assert.match(section, /row\.recipient_role === "secretary"/);
+  assert.match(section, /role='secretary' AND active=TRUE/);
+  assert.match(section, /current_contact/);
+  assert.match(section, /else \{\s*return false;\s*\}/);
+});
+
 test("worker skips a queued notification that is no longer relevant before provider delivery", () => {
   const start = workerSource.indexOf("async function processOne");
   const end = workerSource.indexOf("async function tick", start);
