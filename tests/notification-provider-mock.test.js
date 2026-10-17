@@ -106,3 +106,31 @@ test("invalid recipient phone is rejected before contacting the provider", async
   await assert.rejects(sendTwilioMessage(row("not-a-phone")), /E\.164/);
   assert.equal(calls, 0);
 });
+
+test("messageFor formats patient and staff booking notifications in Arabic", () => {
+  assert.equal(
+    messageFor({ ...row(), event_type: "booked" }),
+    "تم استلام طلب حجزك لدى طبيب الاختبار يوم 20/10/2026 الساعة 14:30، وهو بانتظار التأكيد."
+  );
+  assert.equal(
+    messageFor({ ...row(), event_type: "booked", recipient_role: "doctor", payload: { ...row().payload, patient_name: "مريض الاختبار" } }),
+    "طلب حجز جديد: مريض الاختبار لدى طبيب الاختبار يوم 20/10/2026 الساعة 14:30. يرجى مراجعة الطلب."
+  );
+});
+
+test("messageFor covers confirmed, cancelled, rescheduled, and reminder events", () => {
+  const cases = [
+    ["confirmed", "تم تأكيد موعدك لدى طبيب الاختبار يوم 20/10/2026 الساعة 14:30."],
+    ["cancelled", "تم إلغاء موعدك لدى طبيب الاختبار بتاريخ 20/10/2026 الساعة 14:30."],
+    ["rescheduled", "تم تعديل موعدك لدى طبيب الاختبار ليكون يوم 20/10/2026 الساعة 14:30."],
+    ["reminder_24h", "تذكير: لديك موعد لدى طبيب الاختبار يوم 20/10/2026 الساعة 14:30."]
+  ];
+  for (const [event_type, expected] of cases) {
+    assert.equal(messageFor({ ...row(), event_type }), expected, event_type);
+  }
+});
+
+test("messageFor rejects unsupported event types", () => {
+  assert.throws(() => messageFor({ ...row(), event_type: "unsupported" }), /Unsupported notification event type/);
+});
+
