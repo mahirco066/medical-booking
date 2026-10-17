@@ -94,3 +94,9 @@ test("unsupported channels and unknown appointment statuses are rejected", () =>
   assert.equal(isNotificationRelevant("reminder_24h", "completed", "2026-10-20", "10:00", "2026-10-20", "10:00"), false);
   assert.equal(isNotificationRelevant("booked", "cancelled", "2026-10-20", "10:00", "2026-10-20", "10:00"), false);
 });
+
+test("unsupported notification channels are rejected for staff as well as patients", () => {
+  assert.equal(isPatientChannelConsented("staff", "push", false, false), false);
+  assert.equal(isPatientChannelConsented("doctor", "email", false, false), false);
+  assert.equal(isPatientChannelConsented("staff", "sms", false, false), true);
+});
