@@ -21,21 +21,28 @@ function calculateReminderAt(dateText, timeText) {
 }
 
 function isPatientChannelConsented(recipientRole, channel, smsConsent, whatsappConsent) {
+  // Reject unsupported channels for every recipient role, not only patients.
+  if (channel !== "sms" && channel !== "whatsapp") return false;
   if (recipientRole !== "patient") return true;
   if (channel === "sms") return smsConsent === true;
-  if (channel === "whatsapp") return whatsappConsent === true;
-  return false;
+  return whatsappConsent === true;
 }
 
-function isNotificationRelevant(eventType, currentStatus, payloadDate, payloadTime, currentDate, currentTime) {
+function isNotificationRelevant(eventType, currentStatus, payloadDate, payloadTime, currentDate, currentTime, rescheduleApprovalRequired = false) {
   const sameSlot =
     String(payloadDate || "").slice(0, 10) === String(currentDate || "").slice(0, 10) &&
     String(payloadTime || "").slice(0, 5) === String(currentTime || "").slice(0, 5);
   if (eventType === "cancelled") return currentStatus === "cancelled";
   if (eventType === "booked") return currentStatus === "pending" && sameSlot;
   if (eventType === "confirmed") return currentStatus === "confirmed" && sameSlot;
-  if (eventType === "rescheduled" || eventType === "reminder_24h") {
-    return ["pending", "confirmed"].includes(currentStatus) && sameSlot;
+  if (eventType === "reschedule_requested") {
+    return currentStatus === "confirmed" && rescheduleApprovalRequired === true && sameSlot;
+  }
+  if (eventType === "rescheduled") {
+    return ["pending", "confirmed"].includes(currentStatus) && rescheduleApprovalRequired !== true && sameSlot;
+  }
+  if (eventType === "reminder_24h") {
+    return ["pending", "confirmed"].includes(currentStatus) && rescheduleApprovalRequired !== true && sameSlot;
   }
   return false;
 }

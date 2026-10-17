@@ -2,7 +2,10 @@
 
 const { Pool } = require("pg");
 const { isNotificationRelevant, isPatientChannelConsented } = require("./notification-utils");
-const required = ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "NOTIFICATION_SEND_ENABLED"];
+const DRY_RUN = String(process.env.NOTIFICATION_DRY_RUN || "").toLowerCase() === "true";
+const required = DRY_RUN
+  ? ["DATABASE_URL"]
+  : ["DATABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "NOTIFICATION_SEND_ENABLED"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
   console.error("Notification worker not started. Missing environment variables: " + missing.join(", "));
@@ -12,17 +15,24 @@ const SMS_FROM = process.env.TWILIO_SMS_FROM || "";
 const WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
 // WhatsApp rows are queued by the app, but delivery stays disabled until the
 // worker supports approved template messages and an explicit consent check.
-const ENABLED_CHANNELS = SMS_FROM ? ["sms"] : [];
-if (!ENABLED_CHANNELS.length) {
+const ENABLED_CHANNELS = DRY_RUN ? [] : SMS_FROM ? ["sms"] : [];
+if (!DRY_RUN && !ENABLED_CHANNELS.length) {
   console.error("Notification worker not started. Configure TWILIO_SMS_FROM. WhatsApp delivery is not enabled yet.");
   process.exit(1);
 }
-if (String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
+if (!DRY_RUN && String(process.env.NOTIFICATION_SEND_ENABLED).toLowerCase() !== "true") {
   console.error("Notification worker not started. Set NOTIFICATION_SEND_ENABLED=true only after completing a controlled test.");
   process.exit(1);
 }
+if (DRY_RUN) {
+  console.log("Notification worker started in DRY RUN mode. No messages will be claimed or sent.");
+}
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "test" ? false : { rejectUnauthorized: false },
+  max: 3
+});
 const SID = process.env.TWILIO_ACCOUNT_SID;
 const TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const INTERVAL_MS = 5000;
@@ -56,10 +66,14 @@ function messageFor(row) {
       return isPatient
         ? "تم إلغاء موعدك لدى " + doctor + " بتاريخ " + date + " الساعة " + time + "."
         : "تم إلغاء موعد " + patient + " لدى " + doctor + " بتاريخ " + date + " الساعة " + time + ".";
+    case "reschedule_requested":
+      return isPatient
+        ? "اقترح الطبيب تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ". يرجى مراجعة المنصة والموافقة على الوقت الجديد."
+        : "تم اقتراح تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "، وبانتظار موافقة المريض.";
     case "rescheduled":
       return isPatient
-        ? "تم تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "."
-        : "تم تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ".";
+        ? "تم اعتماد تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "."
+        : "تم اعتماد تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ".";
     case "reminder_24h":
       return isPatient
         ? "تذكير: لديك موعد لدى " + doctor + " يوم " + date + " الساعة " + time + "."
@@ -83,18 +97,42 @@ async function sendTwilioMessage(row) {
     : configuredFrom;
   const endpoint = "https://api.twilio.com/2010-04-01/Accounts/" + SID + "/Messages.json";
   const form = new URLSearchParams({ To: to, From: from, Body: messageFor(row) });
-  const response = await fetch(endpoint, {
-    signal: AbortSignal.timeout(20000),
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + Buffer.from(SID + ":" + TOKEN).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: form
-  });
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(20000),
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(SID + ":" + TOKEN).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form
+    });
+  } catch (error) {
+    // A timeout or connection failure can happen after the provider accepted
+    // the request. Retrying automatically could send a duplicate message.
+    const uncertain = new Error("Delivery outcome unknown; automatic retry suppressed to avoid a duplicate message.");
+    uncertain.deliveryOutcomeUnknown = true;
+    uncertain.cause = error;
+    throw uncertain;
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(String(data.message || ("Twilio HTTP " + response.status)).slice(0, 500));
-  return data.sid || null;
+  if (!response.ok) {
+    const error = new Error(String(data.message || ("Twilio HTTP " + response.status)).slice(0, 500));
+    // A provider-side 5xx may occur after processing the request. Treat it as
+    // ambiguous; only explicit non-5xx rejection responses use normal retries.
+    if (response.status >= 500) {
+      error.deliveryOutcomeUnknown = true;
+      error.message = "Provider returned HTTP " + response.status + "; delivery outcome may be unknown, automatic retry suppressed.";
+    }
+    throw error;
+  }
+  if (!data.sid) {
+    const error = new Error("Provider returned success without a message SID; delivery outcome is unclear, automatic retry suppressed.");
+    error.deliveryOutcomeUnknown = true;
+    throw error;
+  }
+  return data.sid;
 }
 
 async function claimOne() {
@@ -104,8 +142,8 @@ async function claimOne() {
     // Recover claims left behind by a worker that crashed or was restarted.
     // Older rows with no lease timestamp are recovered too.
     await client.query(
-      "UPDATE notification_outbox SET status='failed',locked_at=NULL," +
-      " scheduled_at=NOW(),last_error='Recovered stale processing lease.',updated_at=NOW()" +
+      "UPDATE notification_outbox SET status='failed',attempts=" + MAX_ATTEMPTS + ",locked_at=NULL," +
+      " last_error='Recovered stale processing lease; delivery outcome unknown, automatic retry suppressed.',updated_at=NOW()" +
       " WHERE status='processing' AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '5 minutes')"
     );
 
@@ -135,22 +173,32 @@ async function claimOne() {
 async function finish(row, status, errorText, sentAt, providerMessageId) {
   const attempts = Number(row.attempts || 0) + 1;
   const delaySeconds = Math.min(3600, 30 * Math.pow(2, Math.max(0, attempts - 1)));
-  await pool.query(
+  const result = await pool.query(
     "UPDATE notification_outbox SET status=$2,last_error=$3,sent_at=$4,provider_message_id=$5,locked_at=NULL," +
     " scheduled_at=CASE WHEN $2='failed' AND attempts < $6 THEN NOW() + ($7 * INTERVAL '1 second') ELSE scheduled_at END," +
     " updated_at=NOW() WHERE id=$1 AND status='processing' AND locked_at=$8::timestamptz",
     [row.id, status, errorText || null, sentAt || null, providerMessageId || null, MAX_ATTEMPTS, delaySeconds, row.lease_token]
   );
+  // A query can succeed without updating the row if the lease/state no longer matches.
+  // Treat a missing acknowledgement after provider acceptance as an unknown outcome.
+  if (result.rowCount !== 1) {
+    const error = new Error("Notification status update affected no row; delivery outcome must be treated as unknown.");
+    if (status === "sent") error.deliveryOutcomeUnknown = true;
+    throw error;
+  }
 }
 
 async function isNotificationStillRelevant(row) {
   const result = await pool.query(
-    "SELECT a.status,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
+    "SELECT a.status,a.doctor_id,a.reschedule_approval_required,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
     " COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent," +
     " COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent," +
     " COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS current_patient_sms_phone," +
-    " COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS current_patient_whatsapp_phone" +
-    " FROM appointments a LEFT JOIN patients p ON p.id=a.patient_id LEFT JOIN users pu ON pu.id=p.user_id WHERE a.id=$1 LIMIT 1",
+    " COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS current_patient_whatsapp_phone," +
+    " NULLIF(BTRIM(d.phone),'') AS current_doctor_sms_phone," +
+    " COALESCE((SELECT NULLIF(BTRIM(su.whatsapp_phone),'') FROM staff_users su WHERE su.doctor_id=d.id AND su.role='doctor' AND su.active=TRUE ORDER BY su.created_at LIMIT 1),NULLIF(BTRIM(du.whatsapp_phone),'')) AS current_doctor_whatsapp_phone" +
+    " FROM appointments a LEFT JOIN patients p ON p.id=a.patient_id LEFT JOIN users pu ON pu.id=p.user_id" +
+    " LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN users du ON du.id=d.user_id WHERE a.id=$1 LIMIT 1",
     [row.appointment_id]
   );
   if (!result.rowCount) return false;
@@ -163,13 +211,28 @@ async function isNotificationStillRelevant(row) {
   )) return false;
   // A patient may change contact numbers after an event was queued. Never send
   // a stale queued notification to the previous number, even if consent remains on.
-  if (row.recipient_role === "patient") {
-    const currentPhone = row.channel === "sms"
-      ? appointment.current_patient_sms_phone
-      : row.channel === "whatsapp"
-        ? appointment.current_patient_whatsapp_phone
-        : null;
+  if (row.recipient_role === "patient" || row.recipient_role === "doctor") {
+    const currentPhone = row.recipient_role === "patient"
+      ? (row.channel === "sms"
+        ? appointment.current_patient_sms_phone
+        : row.channel === "whatsapp"
+          ? appointment.current_patient_whatsapp_phone
+          : null)
+      : (row.channel === "sms"
+        ? appointment.current_doctor_sms_phone
+        : row.channel === "whatsapp"
+          ? appointment.current_doctor_whatsapp_phone
+          : null);
     if (!currentPhone || String(currentPhone).trim() !== String(row.recipient_phone || "").trim()) return false;
+  } else if (row.recipient_role === "secretary") {
+    const contact = await pool.query(
+      "SELECT EXISTS (SELECT 1 FROM staff_users WHERE doctor_id=$1 AND role='secretary' AND active=TRUE" +
+      " AND NULLIF(BTRIM(CASE WHEN $2='sms' THEN phone ELSE whatsapp_phone END),'')=NULLIF(BTRIM($3),'') ) AS current_contact",
+      [appointment.doctor_id, row.channel, row.recipient_phone]
+    );
+    if (!contact.rows[0] || contact.rows[0].current_contact !== true) return false;
+  } else {
+    return false;
   }
   return isNotificationRelevant(
     row.event_type,
@@ -177,7 +240,8 @@ async function isNotificationStillRelevant(row) {
     row.payload.appointment_date,
     row.payload.appointment_time,
     appointment.appointment_date,
-    appointment.appointment_time
+    appointment.appointment_time,
+    appointment.reschedule_approval_required
   );
 }
 
@@ -192,12 +256,28 @@ async function processOne() {
       return true;
     }
     const sid = await sendTwilioMessage(row);
-    await finish(row, "sent", null, new Date(), sid);
+    try {
+      await finish(row, "sent", null, new Date(), sid);
+    } catch (error) {
+      // Provider accepted the request, but persistence failed. Do not route this
+      // through the ordinary retry path; stale-lease recovery also suppresses retry.
+      error.deliveryOutcomeUnknown = true;
+      throw error;
+    }
     return true;
   } catch (error) {
     const message = String(error && error.message ? error.message : error).slice(0, 500);
     console.error("Notification delivery failed: " + row.id + " " + message);
-    await finish(row, "failed", message, null, null);
+    if (error && error.deliveryOutcomeUnknown) {
+      // The claim already incremented attempts. Exhaust the retry budget so
+      // this row is not automatically resent when provider acceptance is unclear.
+      await pool.query(
+        "UPDATE notification_outbox SET status='failed',attempts=$2,last_error=$3,locked_at=NULL,updated_at=NOW() WHERE id=$1 AND status='processing' AND locked_at=$4::timestamptz",
+        [row.id, MAX_ATTEMPTS, message, row.lease_token]
+      );
+    } else {
+      await finish(row, "failed", message, null, null);
+    }
     return true;
   }
 }
@@ -216,8 +296,40 @@ async function tick() {
   }
 }
 
-const timer = setInterval(tick, INTERVAL_MS);
-tick();
+let timer;
+
+async function dryRunTick() {
+  if (running || stopping) return;
+  running = true;
+  try {
+    // Read aggregate counts only: dry-run never claims, updates, or sends queue items.
+    const result = await pool.query(
+      "SELECT status, channel, COUNT(*)::int AS count FROM notification_outbox GROUP BY status, channel ORDER BY status, channel"
+    );
+    console.log("Notification worker DRY RUN queue summary:", JSON.stringify(result.rows));
+  } catch (error) {
+    console.error("Notification worker DRY RUN check failed:", String(error && error.message ? error.message : error).slice(0, 500));
+    // Match the checklist: a failed database check stops dry-run instead of
+    // silently retrying forever against a missing table or broken connection.
+    stopping = true;
+    clearInterval(timer);
+    await pool.end().catch(() => {});
+    process.exitCode = 1;
+  } finally {
+    running = false;
+  }
+}
+
+if (process.env.NOTIFICATION_WORKER_TEST_MODE === "true") {
+  // Export pure/provider-facing functions for isolated tests without starting a polling loop.
+  module.exports = { sendTwilioMessage, messageFor };
+} else {
+timer = setInterval(() => {
+  if (DRY_RUN) dryRunTick();
+  else tick();
+}, DRY_RUN ? 60000 : INTERVAL_MS);
+if (DRY_RUN) dryRunTick();
+else tick();
 
 async function shutdown(signal) {
   if (stopping) return;
@@ -231,3 +343,4 @@ async function shutdown(signal) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+}
