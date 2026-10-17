@@ -100,6 +100,17 @@ test("notification enqueue remains idempotent and leaves sent rows as history", 
   assert.match(serverSource, /status='pending' OR \(status='failed' AND attempts < 5\)/);
 });
 
+test("doctor WhatsApp contact falls back to the linked user when staff phone is blank", () => {
+  assert.match(
+    serverSource,
+    /SELECT NULLIF\(BTRIM\(su\.whatsapp_phone\),'\s*'\) FROM staff_users su/
+  );
+  assert.match(
+    serverSource,
+    /NULLIF\(BTRIM\(du\.whatsapp_phone\),'\s*'\)\s*\) AS doctor_whatsapp/
+  );
+});
+
 test("worker checks current patient consent and phone before delivery", () => {
   const start = workerSource.indexOf("async function isNotificationStillRelevant");
   const end = workerSource.indexOf("async function processOne", start);
