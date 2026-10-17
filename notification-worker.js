@@ -273,6 +273,8 @@ async function tick() {
   }
 }
 
+let timer;
+
 async function dryRunTick() {
   if (running || stopping) return;
   running = true;
@@ -299,7 +301,7 @@ if (process.env.NOTIFICATION_WORKER_TEST_MODE === "true") {
   // Export pure/provider-facing functions for isolated tests without starting a polling loop.
   module.exports = { sendTwilioMessage, messageFor };
 } else {
-const timer = setInterval(() => {
+timer = setInterval(() => {
   if (DRY_RUN) dryRunTick();
   else tick();
 }, DRY_RUN ? 60000 : INTERVAL_MS);
