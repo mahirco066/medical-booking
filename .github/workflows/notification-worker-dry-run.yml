@@ -56,6 +56,22 @@ jobs:
           cat /tmp/medical-booking-worker-test.log
           echo "Test server did not become ready in time."
           exit 1
+      - name: Verify patient registration API route is mounted
+        run: |
+          status=$(curl --silent --show-error --output /tmp/patient-register-route.json --write-out "%{http_code}" \\
+            --request POST http://127.0.0.1:18081/api/patient/register \\
+            --header "Content-Type: application/json" \\
+            --data '{}')
+          cat /tmp/patient-register-route.json
+          if [ "$status" != "400" ]; then
+            echo "Expected validation response 400 from patient registration route, received $status."
+            exit 1
+          fi
+          if ! grep -q 'اسم المستخدم مطلوب' /tmp/patient-register-route.json; then
+            echo "Patient registration route did not return the expected validation message."
+            exit 1
+          fi
+          echo "PASS: patient registration route is mounted and validates input."
       - name: Snapshot the complete notification outbox before dry-run
         run: |
           node -e 'const {Pool}=require("pg"); (async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL}); try {const r=await p.query("SELECT COALESCE(jsonb_agg(to_jsonb(n) ORDER BY n.id), '\''[]'\''::jsonb)::text AS snapshot FROM notification_outbox n"); process.stdout.write(r.rows[0].snapshot);} finally {await p.end();}})().catch(e=>{console.error(e);process.exit(1)})' > /tmp/outbox-before.json
