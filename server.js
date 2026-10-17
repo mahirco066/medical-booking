@@ -209,7 +209,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
         `UPDATE notification_outbox
             SET status='cancelled',locked_at=NULL,updated_at=NOW()
           WHERE appointment_id=$1 AND event_type <> 'cancelled'
-            AND status IN ('pending','failed')`,
+            AND (status='pending' OR (status='failed' AND attempts < 5))`,
         [a.id]
       );
     } else if (eventType === "confirmed") {
@@ -217,7 +217,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
         `UPDATE notification_outbox
             SET status='cancelled',locked_at=NULL,updated_at=NOW()
           WHERE appointment_id=$1 AND event_type='booked'
-            AND status IN ('pending','failed')`,
+            AND (status='pending' OR (status='failed' AND attempts < 5))`,
         [a.id]
       );
     } else if (eventType === "rescheduled") {
@@ -226,7 +226,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
             SET status='cancelled',locked_at=NULL,updated_at=NOW()
           WHERE appointment_id=$1
             AND event_type IN ('booked','confirmed','rescheduled','reminder_24h')
-            AND status IN ('pending','failed')`,
+            AND (status='pending' OR (status='failed' AND attempts < 5))`,
         [a.id]
       );
     }
