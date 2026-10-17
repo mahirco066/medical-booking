@@ -144,7 +144,7 @@ async function addColumnIfMissing(table, column, definition) {
 ========================================================= */
 
 async function enqueueAppointmentNotifications(appointmentId, eventType, db = pool) {
-  const allowed = new Set(["booked", "confirmed", "cancelled", "rescheduled"]);
+  const allowed = new Set(["booked", "confirmed", "cancelled", "rescheduled", "reschedule_requested"]);
   if (!allowed.has(eventType)) throw new Error("Unsupported notification event");
 
   const appointment = await db.query(
@@ -225,7 +225,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
         `UPDATE notification_outbox
             SET status='cancelled',locked_at=NULL,updated_at=NOW()
           WHERE appointment_id=$1
-            AND event_type IN ('booked','confirmed','rescheduled','reminder_24h')
+            AND event_type IN ('booked','confirmed','rescheduled','reschedule_requested','reminder_24h')
             AND (status='pending' OR (status='failed' AND attempts < 5))`,
         [a.id]
       );
@@ -233,7 +233,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
 
     // The update timestamp distinguishes a later reschedule back to a previously
     // used slot from the old, already-cancelled outbox rows for that same slot.
-    const eventVersion = eventType === "rescheduled"
+    const eventVersion = ["rescheduled", "reschedule_requested"].includes(eventType)
       ? new Date(a.updated_at || Date.now()).toISOString()
       : "";
 
@@ -254,7 +254,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
       }
     }
 
-    if (["booked", "confirmed", "rescheduled"].includes(eventType) && ["pending", "confirmed"].includes(a.status)) {
+    if (["booked", "confirmed", "rescheduled"].includes(eventType) && ["pending", "confirmed"].includes(a.status) && !a.reschedule_approval_required) {
       // Sudan local time (Africa/Khartoum, UTC+2): store reminder due time as UTC.
       const reminderAt = calculateReminderAt(dateText, timeText);
       if (reminderAt.getTime() > Date.now()) {
@@ -1807,10 +1807,14 @@ app.patch("/api/my-appointments/:id/approve-reschedule", requireAuth, async (req
     if (req.authUser.type !== "patient") {
       return jsonError(res, 403, "هذا المسار مخصص للمرضى.");
     }
-    const result = await pool.query(
-      "UPDATE appointments a SET reschedule_approval_required=FALSE, updated_at=NOW() FROM patients p WHERE a.id=$1 AND a.patient_id=p.id AND p.user_id=$2 AND a.status='confirmed' AND a.reschedule_approval_required=TRUE RETURNING a.*",
-      [req.params.id, req.authUser.id]
-    );
+    const result = await withDatabaseTransaction(async (client) => {
+      const updated = await client.query(
+        "UPDATE appointments a SET reschedule_approval_required=FALSE, updated_at=NOW() FROM patients p WHERE a.id=$1 AND a.patient_id=p.id AND p.user_id=$2 AND a.status='confirmed' AND a.reschedule_approval_required=TRUE RETURNING a.*",
+        [req.params.id, req.authUser.id]
+      );
+      if (updated.rowCount) await enqueueAppointmentNotifications(updated.rows[0].id, "rescheduled", client);
+      return updated;
+    });
     if (!result.rowCount) {
       return jsonError(res, 409, "لا يوجد تعديل وقت بانتظار موافقتك لهذا الموعد.");
     }
