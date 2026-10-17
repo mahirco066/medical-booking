@@ -48,6 +48,7 @@ function runWorkerWithMockDatabase(shouldFail) {
     global.fetch = () => { throw new Error("unexpected provider call during dry-run"); };
     process.env.DATABASE_URL = "postgres://mock.invalid/test";
     process.env.NOTIFICATION_DRY_RUN = "true";
+    process.env.NOTIFICATION_WORKER_TEST_MODE = "false";
     // Even accidental live-send configuration must not override dry-run mode.
     process.env.TWILIO_ACCOUNT_SID = "AC_TEST";
     process.env.TWILIO_AUTH_TOKEN = "test-token";
@@ -125,6 +126,7 @@ function runWorkerStartup(envOverrides) {
       ...process.env,
       DATABASE_URL: "postgres://mock.invalid/test",
       NOTIFICATION_DRY_RUN: "false",
+      NOTIFICATION_WORKER_TEST_MODE: "false",
       TWILIO_ACCOUNT_SID: "AC_TEST",
       TWILIO_AUTH_TOKEN: "test-token",
       NOTIFICATION_SEND_ENABLED: "false",
