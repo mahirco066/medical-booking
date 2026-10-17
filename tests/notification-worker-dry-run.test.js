@@ -40,7 +40,7 @@ test("dry-run database failure stops the timer, closes the pool, and marks failu
 });
 
 test("scheduler routes dry-run ticks away from the delivery worker", () => {
-  const start = workerSource.indexOf("const timer = setInterval");
+  const start = workerSource.indexOf("timer = setInterval");
   const end = workerSource.indexOf("async function shutdown", start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
