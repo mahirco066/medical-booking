@@ -295,6 +295,10 @@ async function dryRunTick() {
   }
 }
 
+if (process.env.NOTIFICATION_WORKER_TEST_MODE === "true") {
+  // Export pure/provider-facing functions for isolated tests without starting a polling loop.
+  module.exports = { sendTwilioMessage, messageFor };
+} else {
 const timer = setInterval(() => {
   if (DRY_RUN) dryRunTick();
   else tick();
@@ -314,3 +318,4 @@ async function shutdown(signal) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+}
