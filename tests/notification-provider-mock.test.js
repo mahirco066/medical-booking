@@ -23,7 +23,7 @@ Module._load = function(request, parent, isMain) {
   return originalLoad.call(this, request, parent, isMain);
 };
 
-const { sendTwilioMessage } = require("../notification-worker.js");
+const { sendTwilioMessage, messageFor } = require("../notification-worker.js");
 Module._load = originalLoad;
 
 function row(phone) {
