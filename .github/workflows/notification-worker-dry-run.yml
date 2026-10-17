@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/notification-worker-dry-run]
+    branches: [feature/notification-worker-dry-run, integration/notification-worker-main-sync]
 
 jobs:
   dry-run:
