@@ -21,10 +21,11 @@ function calculateReminderAt(dateText, timeText) {
 }
 
 function isPatientChannelConsented(recipientRole, channel, smsConsent, whatsappConsent) {
+  // Reject unsupported channels for every recipient role, not only patients.
+  if (channel !== "sms" && channel !== "whatsapp") return false;
   if (recipientRole !== "patient") return true;
   if (channel === "sms") return smsConsent === true;
-  if (channel === "whatsapp") return whatsappConsent === true;
-  return false;
+  return whatsappConsent === true;
 }
 
 function isNotificationRelevant(eventType, currentStatus, payloadDate, payloadTime, currentDate, currentTime) {
