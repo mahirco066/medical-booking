@@ -42,10 +42,15 @@ test("notification_outbox schema contains the fields used by the worker", () => 
 
 test("notification_outbox schema constrains event, channel, and status values", () => {
   const schema = outboxTableDefinition();
-  assert.match(schema, /event_type TEXT NOT NULL CHECK\s*\(event_type IN\s*\('booked','confirmed','cancelled','rescheduled','reminder_24h'\)\)/i);
+  assert.match(schema, /event_type TEXT NOT NULL CHECK\s*\(event_type IN\s*\('booked','confirmed','cancelled','rescheduled','reschedule_requested','reminder_24h'\)\)/i);
   assert.match(schema, /channel TEXT NOT NULL CHECK\s*\(channel IN\s*\('sms','whatsapp'\)\)/i);
   assert.match(schema, /status TEXT NOT NULL DEFAULT 'pending' CHECK\s*\(status IN\s*\('pending','processing','sent','failed','cancelled'\)\)/i);
   assert.match(schema, /idempotency_key TEXT NOT NULL UNIQUE/i);
+});
+
+test("existing outbox tables are migrated to accept pending reschedule proposals", () => {
+  assert.match(serverSource, /DROP CONSTRAINT notification_outbox_event_type_check/);
+  assert.match(serverSource, /ADD CONSTRAINT notification_outbox_event_type_check[\s\S]*?reschedule_requested/);
 });
 
 test("worker's dry-run aggregate query uses columns defined by the schema", () => {
