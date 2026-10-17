@@ -49,7 +49,7 @@ test("notification_outbox schema constrains event, channel, and status values", 
 });
 
 test("existing outbox tables are migrated to accept pending reschedule proposals", () => {
-  assert.match(serverSource, /DROP CONSTRAINT notification_outbox_event_type_check/);
+  assert.match(serverSource, /DROP CONSTRAINT IF EXISTS notification_outbox_event_type_check/);
   assert.match(serverSource, /ADD CONSTRAINT notification_outbox_event_type_check[\s\S]*?reschedule_requested/);
 });
 
