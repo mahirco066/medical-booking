@@ -88,13 +88,12 @@ test("cancellation invalidates unsent appointment notifications but preserves se
 test("rescheduling cancels stale unsent events and reminders before enqueueing the new slot", () => {
   assert.match(
     serverSource,
-    /else if \(eventType === "rescheduled"\)\s*\{\s*await client\.query\([\s\S]*?event_type IN \('booked','confirmed','rescheduled','reminder_24h'\)[\s\S]*?status='pending' OR \(status='failed' AND attempts < 5\)/
+    /else if \(eventType === "rescheduled" \|\| eventType === "reschedule_requested"\)\s*\{\s*await client\.query\([\s\S]*?event_type IN \('booked','confirmed','rescheduled','reschedule_requested','reminder_24h'\)[\s\S]*?status='pending' OR \(status='failed' AND attempts < 5\)/
   );
-  assert.match(serverSource, /const eventVersion = eventType === "rescheduled"/);
+  assert.match(serverSource, /const eventVersion = \["rescheduled", "reschedule_requested"\]\.includes\(eventType\)/);
   assert.match(serverSource, /reminderVersion = eventType === "rescheduled" \? eventVersion : ""/);
   assert.match(serverSource, /appointment:\$\{a\.id\}:reminder_24h:[\s\S]*?\$\{reminderVersion\}/);
 });
-
 test("notification enqueue remains idempotent and leaves sent rows as history", () => {
   assert.match(serverSource, /ON CONFLICT \(idempotency_key\) DO NOTHING/);
   assert.match(serverSource, /Keep already-sent rows as an audit trail/);
