@@ -75,6 +75,29 @@ test("unknown notification events are never considered relevant", () => {
   assert.equal(isNotificationRelevant("unknown", "confirmed", "2026-10-20", "10:00", "2026-10-20", "10:00"), false);
 });
 
+test("proposed reschedule is relevant only while patient approval is pending", () => {
+  assert.equal(
+    isNotificationRelevant("reschedule_requested", "confirmed", "2026-10-20", "10:00", "2026-10-20", "10:00", true),
+    true
+  );
+  assert.equal(
+    isNotificationRelevant("reschedule_requested", "confirmed", "2026-10-20", "10:00", "2026-10-20", "10:00", false),
+    false
+  );
+  assert.equal(
+    isNotificationRelevant("rescheduled", "confirmed", "2026-10-20", "10:00", "2026-10-20", "10:00", true),
+    false
+  );
+  assert.equal(
+    isNotificationRelevant("rescheduled", "confirmed", "2026-10-20", "10:00", "2026-10-20", "10:00", false),
+    true
+  );
+  assert.equal(
+    isNotificationRelevant("reminder_24h", "confirmed", "2026-10-20", "10:00", "2026-10-20", "10:00", true),
+    false
+  );
+});
+
 test("reminder calculation handles appointments just after local midnight", () => {
   assert.equal(
     calculateReminderAt("2026-10-20", "00:30").toISOString(),
