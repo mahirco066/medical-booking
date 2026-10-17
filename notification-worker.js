@@ -66,10 +66,14 @@ function messageFor(row) {
       return isPatient
         ? "تم إلغاء موعدك لدى " + doctor + " بتاريخ " + date + " الساعة " + time + "."
         : "تم إلغاء موعد " + patient + " لدى " + doctor + " بتاريخ " + date + " الساعة " + time + ".";
+    case "reschedule_requested":
+      return isPatient
+        ? "اقترح الطبيب تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ". يرجى مراجعة المنصة والموافقة على الوقت الجديد."
+        : "تم اقتراح تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "، وبانتظار موافقة المريض.";
     case "rescheduled":
       return isPatient
-        ? "تم تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "."
-        : "تم تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ".";
+        ? "تم اعتماد تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "."
+        : "تم اعتماد تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ".";
     case "reminder_24h":
       return isPatient
         ? "تذكير: لديك موعد لدى " + doctor + " يوم " + date + " الساعة " + time + "."
@@ -186,7 +190,7 @@ async function finish(row, status, errorText, sentAt, providerMessageId) {
 
 async function isNotificationStillRelevant(row) {
   const result = await pool.query(
-    "SELECT a.status,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
+    "SELECT a.status,a.reschedule_approval_required,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
     " COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent," +
     " COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent," +
     " COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS current_patient_sms_phone," +
@@ -218,7 +222,8 @@ async function isNotificationStillRelevant(row) {
     row.payload.appointment_date,
     row.payload.appointment_time,
     appointment.appointment_date,
-    appointment.appointment_time
+    appointment.appointment_time,
+    appointment.reschedule_approval_required
   );
 }
 
