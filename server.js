@@ -220,7 +220,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
             AND (status='pending' OR (status='failed' AND attempts < 5))`,
         [a.id]
       );
-    } else if (eventType === "rescheduled") {
+    } else if (eventType === "rescheduled" || eventType === "reschedule_requested") {
       await client.query(
         `UPDATE notification_outbox
             SET status='cancelled',locked_at=NULL,updated_at=NOW()
