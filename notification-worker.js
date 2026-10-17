@@ -190,12 +190,15 @@ async function finish(row, status, errorText, sentAt, providerMessageId) {
 
 async function isNotificationStillRelevant(row) {
   const result = await pool.query(
-    "SELECT a.status,a.reschedule_approval_required,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
+    "SELECT a.status,a.doctor_id,a.reschedule_approval_required,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
     " COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent," +
     " COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent," +
     " COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS current_patient_sms_phone," +
-    " COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS current_patient_whatsapp_phone" +
-    " FROM appointments a LEFT JOIN patients p ON p.id=a.patient_id LEFT JOIN users pu ON pu.id=p.user_id WHERE a.id=$1 LIMIT 1",
+    " COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS current_patient_whatsapp_phone," +
+    " NULLIF(BTRIM(d.phone),'') AS current_doctor_sms_phone," +
+    " COALESCE((SELECT NULLIF(BTRIM(su.whatsapp_phone),'') FROM staff_users su WHERE su.doctor_id=d.id AND su.role='doctor' AND su.active=TRUE ORDER BY su.created_at LIMIT 1),NULLIF(BTRIM(du.whatsapp_phone),'')) AS current_doctor_whatsapp_phone" +
+    " FROM appointments a LEFT JOIN patients p ON p.id=a.patient_id LEFT JOIN users pu ON pu.id=p.user_id" +
+    " LEFT JOIN doctors d ON d.id=a.doctor_id LEFT JOIN users du ON du.id=d.user_id WHERE a.id=$1 LIMIT 1",
     [row.appointment_id]
   );
   if (!result.rowCount) return false;
@@ -208,13 +211,28 @@ async function isNotificationStillRelevant(row) {
   )) return false;
   // A patient may change contact numbers after an event was queued. Never send
   // a stale queued notification to the previous number, even if consent remains on.
-  if (row.recipient_role === "patient") {
-    const currentPhone = row.channel === "sms"
-      ? appointment.current_patient_sms_phone
-      : row.channel === "whatsapp"
-        ? appointment.current_patient_whatsapp_phone
-        : null;
+  if (row.recipient_role === "patient" || row.recipient_role === "doctor") {
+    const currentPhone = row.recipient_role === "patient"
+      ? (row.channel === "sms"
+        ? appointment.current_patient_sms_phone
+        : row.channel === "whatsapp"
+          ? appointment.current_patient_whatsapp_phone
+          : null)
+      : (row.channel === "sms"
+        ? appointment.current_doctor_sms_phone
+        : row.channel === "whatsapp"
+          ? appointment.current_doctor_whatsapp_phone
+          : null);
     if (!currentPhone || String(currentPhone).trim() !== String(row.recipient_phone || "").trim()) return false;
+  } else if (row.recipient_role === "secretary") {
+    const contact = await pool.query(
+      "SELECT EXISTS (SELECT 1 FROM staff_users WHERE doctor_id=$1 AND role='secretary' AND active=TRUE" +
+      " AND NULLIF(BTRIM(CASE WHEN $2='sms' THEN phone ELSE whatsapp_phone END),'')=NULLIF(BTRIM($3),'') ) AS current_contact",
+      [appointment.doctor_id, row.channel, row.recipient_phone]
+    );
+    if (!contact.rows[0] || contact.rows[0].current_contact !== true) return false;
+  } else {
+    return false;
   }
   return isNotificationRelevant(
     row.event_type,
