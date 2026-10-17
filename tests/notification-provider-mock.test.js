@@ -122,7 +122,7 @@ test("messageFor covers confirmed, cancelled, rescheduled, and reminder events",
   const cases = [
     ["confirmed", "تم تأكيد موعدك لدى طبيب الاختبار يوم 20/10/2026 الساعة 14:30."],
     ["cancelled", "تم إلغاء موعدك لدى طبيب الاختبار بتاريخ 20/10/2026 الساعة 14:30."],
-    ["rescheduled", "تم تعديل موعدك لدى طبيب الاختبار ليكون يوم 20/10/2026 الساعة 14:30."],
+    ["rescheduled", "تم اعتماد تعديل موعدك لدى طبيب الاختبار ليكون يوم 20/10/2026 الساعة 14:30."],
     ["reminder_24h", "تذكير: لديك موعد لدى طبيب الاختبار يوم 20/10/2026 الساعة 14:30."]
   ];
   for (const [event_type, expected] of cases) {
