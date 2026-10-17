@@ -74,3 +74,23 @@ test("rescheduled and reminder notifications require an active appointment and m
 test("unknown notification events are never considered relevant", () => {
   assert.equal(isNotificationRelevant("unknown", "confirmed", "2026-10-20", "10:00", "2026-10-20", "10:00"), false);
 });
+
+test("reminder calculation handles appointments just after local midnight", () => {
+  assert.equal(
+    calculateReminderAt("2026-10-20", "00:30").toISOString(),
+    "2026-10-18T22:30:00.000Z"
+  );
+});
+
+test("patient consent requires the literal boolean true", () => {
+  for (const consent of [undefined, null, false, 0, 1, "true", "yes"]) {
+    assert.equal(isPatientChannelConsented("patient", "sms", consent, false), false);
+    assert.equal(isPatientChannelConsented("patient", "whatsapp", false, consent), false);
+  }
+});
+
+test("unsupported channels and unknown appointment statuses are rejected", () => {
+  assert.equal(isPatientChannelConsented("patient", "push", true, true), false);
+  assert.equal(isNotificationRelevant("reminder_24h", "completed", "2026-10-20", "10:00", "2026-10-20", "10:00"), false);
+  assert.equal(isNotificationRelevant("booked", "cancelled", "2026-10-20", "10:00", "2026-10-20", "10:00"), false);
+});
