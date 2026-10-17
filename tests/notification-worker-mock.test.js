@@ -110,7 +110,16 @@ test("dry-run closes the pool and marks failure with a mocked database error", (
 });
 
 function runWorkerStartup(envOverrides) {
-  return spawnSync(process.execPath, ["-e", `require(${JSON.stringify(workerPath)});`], {
+  const startupScript = `
+    const Module = require("node:module");
+    const originalLoad = Module._load;
+    Module._load = function(request, parent, isMain) {
+      if (request === "pg") return { Pool: class MockPool {} };
+      return originalLoad.call(this, request, parent, isMain);
+    };
+    require(${JSON.stringify(workerPath)});
+  `;
+  return spawnSync(process.execPath, ["-e", startupScript], {
     encoding: "utf8",
     env: {
       ...process.env,
