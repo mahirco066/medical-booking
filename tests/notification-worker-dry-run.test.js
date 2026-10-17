@@ -80,7 +80,7 @@ const serverSource = fs.readFileSync(
 test("cancellation invalidates unsent appointment notifications but preserves sent audit rows", () => {
   assert.match(
     serverSource,
-    /if \(eventType === "cancelled"\)\s*\{\s*await client\.query\([\s\S]*?SET status='cancelled',locked_at=NULL,updated_at=NOW\(\)[\s\S]*?WHERE appointment_id=\$1 AND event_type <> 'cancelled'[\s\S]*?status IN \('pending','failed'\)/
+    /if \(eventType === "cancelled"\)\s*\{\s*await client\.query\([\s\S]*?SET status='cancelled',locked_at=NULL,updated_at=NOW\(\)[\s\S]*?WHERE appointment_id=\$1 AND event_type <> 'cancelled'[\s\S]*?status='pending' OR \(status='failed' AND attempts < 5\)/
   );
   assert.match(serverSource, /if \(\["booked", "confirmed", "rescheduled"\]\.includes\(eventType\)/);
 });
@@ -88,7 +88,7 @@ test("cancellation invalidates unsent appointment notifications but preserves se
 test("rescheduling cancels stale unsent events and reminders before enqueueing the new slot", () => {
   assert.match(
     serverSource,
-    /else if \(eventType === "rescheduled"\)\s*\{\s*await client\.query\([\s\S]*?event_type IN \('booked','confirmed','rescheduled','reminder_24h'\)[\s\S]*?status IN \('pending','failed'\)/
+    /else if \(eventType === "rescheduled"\)\s*\{\s*await client\.query\([\s\S]*?event_type IN \('booked','confirmed','rescheduled','reminder_24h'\)[\s\S]*?status='pending' OR \(status='failed' AND attempts < 5\)/
   );
   assert.match(serverSource, /const eventVersion = eventType === "rescheduled"/);
   assert.match(serverSource, /reminderVersion = eventType === "rescheduled" \? eventVersion : ""/);
@@ -98,7 +98,7 @@ test("rescheduling cancels stale unsent events and reminders before enqueueing t
 test("notification enqueue remains idempotent and leaves sent rows as history", () => {
   assert.match(serverSource, /ON CONFLICT \(idempotency_key\) DO NOTHING/);
   assert.match(serverSource, /Keep already-sent rows as an audit trail/);
-  assert.match(serverSource, /status IN \('pending','failed'\)/);
+  assert.match(serverSource, /status='pending' OR \(status='failed' AND attempts < 5\)/);
 });
 
 test("worker checks current patient consent and phone before delivery", () => {
@@ -135,7 +135,7 @@ test("worker skips a queued notification that is no longer relevant before provi
 test("cancellation and rescheduling invalidate only retryable unsent rows, not in-flight or sent audit rows", () => {
   const invalidations = [
     ...serverSource.matchAll(
-      /UPDATE notification_outbox\s+SET status='cancelled',locked_at=NULL,updated_at=NOW\(\)\s+WHERE appointment_id=\$1[\s\S]*?status IN \('pending','failed'\)/g
+      /UPDATE notification_outbox\s+SET status='cancelled',locked_at=NULL,updated_at=NOW\(\)\s+WHERE appointment_id=\$1[\s\S]*?status='pending' OR \(status='failed' AND attempts < 5\)/g
     )
   ].map((match) => match[0]);
 
@@ -146,7 +146,7 @@ test("cancellation and rescheduling invalidate only retryable unsent rows, not i
   );
 
   for (const statement of invalidations) {
-    assert.match(statement, /status IN \('pending','failed'\)/);
+    assert.match(statement, /status='pending' OR \(status='failed' AND attempts < 5\)/);
     assert.doesNotMatch(
       statement,
       /status\s*=\s*'processing'|status IN \([^)]*processing/i,
