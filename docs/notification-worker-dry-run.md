@@ -44,3 +44,29 @@ Real delivery is a separate, explicitly approved change. It requires provider se
 - A small race remains between that final database read and the provider accepting the message: an appointment can be cancelled or rescheduled during that interval. The worker does not hold a database transaction open across the network request, because doing so could block appointment updates for the provider timeout window.
 - Therefore the pre-send check reduces stale notifications but cannot guarantee that no message is sent during a simultaneous cancellation/reschedule. Do not describe delivery as exactly-once or race-free. For any reported stale message, reconcile the outbox row against the provider message log and appointment audit trail.
 - A future stronger guarantee would require provider-supported idempotency/cancellation semantics or a separately designed delivery protocol; do not attempt to solve this by force-cancelling a `processing` row while a provider request may be in flight.
+
+## End-to-end appointment acceptance matrix
+
+Run these checks only in an isolated test environment. The current GitHub integration suite covers automated route, database-schema, notification utility, worker mock, and dry-run checks; the following matrix records the expected user-visible lifecycle as well.
+
+| Scenario | Expected appointment behavior | Notification expectation |
+|---|---|---|
+| Patient submits a new booking | Appointment is created as `pending` and appears in the patient's list and the assigned doctor's/secretary's list only | Queue a `booked` event; it is relevant only while the appointment remains pending at the same date/time |
+| Doctor or secretary confirms | Status changes to `confirmed`; unrelated doctors/secretaries cannot act on it | Queue `confirmed`; stale unsent `booked` items must not later be sent |
+| Patient or authorized staff cancels | Status becomes `cancelled`; cancelled appointments cannot be confirmed or rescheduled through the normal status path | Queue `cancelled`; unsent booking/confirmation/reschedule/reminder events must be invalidated |
+| Doctor/secretary proposes a new time | Appointment stays confirmed but requires patient approval; patient sees the proposed time and an approval action | Queue `reschedule_requested`; do not send the approved-change message or a reminder for the proposed slot yet |
+| Patient approves the proposed time | Approval flag clears and the appointment remains active at the new slot | Queue `rescheduled`; old-slot events and reminders must be invalidated |
+| Patient does not approve / appointment changes again | No notification for an obsolete proposed slot should be sent; status and approval requirement must remain consistent | Relevance check suppresses stale `reschedule_requested` and `rescheduled` rows |
+| Appointment is completed or marked no-show | Only a confirmed appointment may transition to `completed` or `no_show`; terminal appointments cannot be revived through ordinary status updates | No booking/reminder event should be treated as relevant after the appointment is terminal |
+| Patient has no explicit consent or current phone changes | Booking remains usable; notification delivery is skipped for the disallowed channel or stale destination | Patient SMS/WhatsApp requires literal `true` consent for that channel; the queued number must match the current verified destination |
+| Worker starts in dry-run mode | It reads grouped outbox counts only | No provider request, claim, retry, status update, attempt increment, or timestamp/provider-field change; the integration workflow compares the complete outbox snapshot before and after |
+| Provider result is ambiguous | Do not automatically resend an outcome that may already have been accepted | Mark for manual reconciliation against provider logs; never assume `failed` proves non-delivery |
+
+### Release gate
+
+- [ ] Automated checks pass on the exact proposed commit.
+- [ ] Booking, confirmation, cancellation, reschedule proposal, patient approval, and terminal-state behavior are verified in an isolated test environment.
+- [ ] Dry-run outbox snapshot is identical before and after the worker runs.
+- [ ] Current patient consent and destination checks are verified for both SMS and WhatsApp paths; WhatsApp sending remains disabled.
+- [ ] The concurrent cancellation/reschedule race and uncertain-provider outcomes are acknowledged; no exactly-once or race-free guarantee is claimed.
+- [ ] Real sending, provider credentials, a hosted worker service, production database access, and merge to `main` remain blocked until separately approved.
