@@ -223,7 +223,7 @@ test("admin and doctor status routes enforce valid appointment transitions", () 
     adminRouteSource.includes("status='confirmed' AND $1 IN ('confirmed','cancelled','completed','no_show')"),
     "confirmed appointments must not be reverted to pending"
   );
-  assert.match(adminRouteSource, /409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى\\."/);
+  assert.ok(adminRouteSource.includes('jsonError(res, 409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى.")'));
 
   const doctorRouteStart = serverSource.indexOf('app.patch("/api/doctor/appointments/:id/status"');
   const doctorRouteEnd = serverSource.indexOf('app.patch("/api/doctor/appointments/:id"', doctorRouteStart + 1);
