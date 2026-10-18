@@ -124,6 +124,17 @@ test("worker checks current patient consent and phone before delivery", () => {
   assert.match(section, /return isNotificationRelevant\(/);
 });
 
+test("worker does not fall back to a historical appointment phone after the patient clears their current number", () => {
+  assert.match(
+    workerSource,
+    /COALESCE\(NULLIF\(BTRIM\(p\.phone\),''\),NULLIF\(BTRIM\(pu\.phone\),''\)\) AS current_patient_sms_phone/
+  );
+  assert.doesNotMatch(
+    workerSource,
+    /NULLIF\(BTRIM\(a\.patient_phone\),''\)\s*,?\s*NULLIF\(BTRIM\(pu\.phone\),''\)/
+  );
+});
+
 test("worker rejects stale doctor and secretary contact numbers before delivery", () => {
   const start = workerSource.indexOf("async function isNotificationStillRelevant");
   const end = workerSource.indexOf("async function processOne", start);
