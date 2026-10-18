@@ -250,6 +250,20 @@ async function main() {
   });
   expectStatus(cannotReopenCancelledAppointment, 409, "Cancelled appointments cannot be reopened through status update");
 
+  const adminCannotRescheduleCancelledAppointment = await request(`/api/admin/appointments/${appointmentConflictId}`, {
+    token: admin.token, method: "PATCH",
+    body: { appointment_date: "2099-01-16", appointment_time: "10:30" }
+  });
+  expectStatus(adminCannotRescheduleCancelledAppointment, 409, "Admin cannot reschedule a cancelled appointment");
+  const cancelledAppointmentOutboxAfterEdit = await pool.query(
+    "SELECT event_type,status FROM notification_outbox WHERE appointment_id=$1",
+    [appointmentConflictId]
+  );
+  assert.ok(
+    cancelledAppointmentOutboxAfterEdit.rows.every(row => row.event_type !== "rescheduled" && row.event_type !== "reschedule_requested"),
+    "Rejected admin edits must not enqueue reschedule notifications for a cancelled appointment"
+  );
+
   const validReschedule = await request(`/api/doctor/appointments/${appointmentAId}`, {
     token: doctorAUser.token, method: "PATCH",
     body: { appointment_date: date, appointment_time: "09:30" }
