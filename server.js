@@ -2942,6 +2942,7 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
              appointment_time = $2::time,
              updated_at = NOW()
          WHERE id = $3
+           AND status IN ('pending', 'confirmed')
          RETURNING *`,
         [appointmentDate, appointmentTime, req.params.id]
       );
@@ -2952,7 +2953,7 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
     });
 
     if (!result.rowCount) {
-      return jsonError(res, 404, "الموعد غير موجود.");
+      return jsonError(res, 409, "تعذر تعديل الموعد؛ ربما تغيرت حالته.");
     }
 
     return jsonOk(res, {
