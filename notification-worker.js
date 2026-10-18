@@ -193,7 +193,7 @@ async function isNotificationStillRelevant(row) {
     "SELECT a.status,a.doctor_id,a.reschedule_approval_required,a.appointment_date::text AS appointment_date,to_char(a.appointment_time,'HH24:MI') AS appointment_time," +
     " COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent," +
     " COALESCE(p.whatsapp_notifications_consent,FALSE) AS patient_whatsapp_consent," +
-    " COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS current_patient_sms_phone," +
+    " COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(pu.phone),'')) AS current_patient_sms_phone," +
     " COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS current_patient_whatsapp_phone," +
     " NULLIF(BTRIM(d.phone),'') AS current_doctor_sms_phone," +
     " COALESCE((SELECT NULLIF(BTRIM(su.whatsapp_phone),'') FROM staff_users su WHERE su.doctor_id=d.id AND su.role='doctor' AND su.active=TRUE ORDER BY su.created_at LIMIT 1),NULLIF(BTRIM(du.whatsapp_phone),'')) AS current_doctor_whatsapp_phone" +
