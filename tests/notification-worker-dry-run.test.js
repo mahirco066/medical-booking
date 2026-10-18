@@ -209,15 +209,33 @@ test("cancellation and rescheduling invalidate only retryable unsent rows, not i
   }
 });
 
-test("admin status updates cannot revive terminal appointments", () => {
-  const routeStart = serverSource.indexOf('app.patch("/api/admin/appointments/:id/status"');
-  const routeEnd = serverSource.indexOf('app.patch("/api/admin/appointments/:id"', routeStart + 1);
-  assert.notEqual(routeStart, -1, "admin appointment status route must exist");
-  assert.notEqual(routeEnd, -1, "admin appointment edit route must follow status route");
-  const routeSource = serverSource.slice(routeStart, routeEnd);
-  assert.match(
-    routeSource,
-    /WHERE id=\$3 AND status IN \('pending','confirmed'\) AND \(\$1='cancelled' OR reschedule_approval_required=FALSE\) RETURNING \*/
+test("admin and doctor status routes enforce valid appointment transitions", () => {
+  const adminRouteStart = serverSource.indexOf('app.patch("/api/admin/appointments/:id/status"');
+  const adminRouteEnd = serverSource.indexOf('app.patch("/api/admin/appointments/:id"', adminRouteStart + 1);
+  assert.notEqual(adminRouteStart, -1, "admin appointment status route must exist");
+  assert.notEqual(adminRouteEnd, -1, "admin appointment edit route must follow status route");
+  const adminRouteSource = serverSource.slice(adminRouteStart, adminRouteEnd);
+  assert.ok(
+    adminRouteSource.includes("status='pending' AND $1 IN ('pending','confirmed','cancelled')"),
+    "pending appointments must not jump directly to completed or no-show"
   );
-  assert.match(routeSource, /409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى\."/);
+  assert.ok(
+    adminRouteSource.includes("status='confirmed' AND $1 IN ('confirmed','cancelled','completed','no_show')"),
+    "confirmed appointments must not be reverted to pending"
+  );
+  assert.match(adminRouteSource, /409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى\\."/);
+
+  const doctorRouteStart = serverSource.indexOf('app.patch("/api/doctor/appointments/:id/status"');
+  const doctorRouteEnd = serverSource.indexOf('app.patch("/api/doctor/appointments/:id"', doctorRouteStart + 1);
+  assert.notEqual(doctorRouteStart, -1, "doctor appointment status route must exist");
+  assert.notEqual(doctorRouteEnd, -1, "doctor appointment edit route must follow status route");
+  const doctorRouteSource = serverSource.slice(doctorRouteStart, doctorRouteEnd);
+  assert.ok(
+    doctorRouteSource.includes("status='pending' AND $1 IN ('pending','confirmed','cancelled')"),
+    "pending appointments must not jump directly to completed or no-show"
+  );
+  assert.ok(
+    doctorRouteSource.includes("status='confirmed' AND $1 IN ('confirmed','cancelled','completed','no_show')"),
+    "confirmed appointments must not be reverted to pending"
+  );
 });
