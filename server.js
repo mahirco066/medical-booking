@@ -2852,7 +2852,7 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
       [req.params.id]
     );
     if (!currentAppointment.rowCount) {
-      return jsonError(res, 409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى.");
+      return jsonError(res, 404, "الموعد غير موجود.");
     }
     if (currentAppointment.rows[0].reschedule_approval_required && status !== "cancelled") {
       return jsonError(res, 409, "لا يمكن تغيير حالة الموعد قبل موافقة المريض على الوقت الجديد.");
@@ -2877,7 +2877,7 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
     });
 
     if (!result.rowCount) {
-      return jsonError(res, 404, "الموعد غير موجود.");
+      return jsonError(res, 409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى.");
     }
 
     return jsonOk(res, {
