@@ -2852,7 +2852,7 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
       [req.params.id]
     );
     if (!currentAppointment.rowCount) {
-      return jsonError(res, 404, "الموعد غير موجود.");
+      return jsonError(res, 409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى.");
     }
     if (currentAppointment.rows[0].reschedule_approval_required && status !== "cancelled") {
       return jsonError(res, 409, "لا يمكن تغيير حالة الموعد قبل موافقة المريض على الوقت الجديد.");
@@ -2863,7 +2863,7 @@ app.patch("/api/admin/appointments/:id/status", requireAdmin, async (req, res) =
 
     const result = await withDatabaseTransaction(async (client) => {
       const updated = await client.query(
-        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND ($1='cancelled' OR reschedule_approval_required=FALSE) RETURNING *",
+        "UPDATE appointments SET status=$1,cancellation_reason=$2,updated_at=NOW() WHERE id=$3 AND status IN ('pending','confirmed') AND ($1='cancelled' OR reschedule_approval_required=FALSE) RETURNING *",
         [
           status,
           status === "cancelled" ? cancellationReason : null,
