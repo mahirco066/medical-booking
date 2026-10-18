@@ -149,7 +149,7 @@ async function enqueueAppointmentNotifications(appointmentId, eventType, db = po
 
   const appointment = await db.query(
     `SELECT a.id,a.patient_id,a.doctor_id,a.patient_name,
-            COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(a.patient_phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
+            COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone,
             a.appointment_date::text AS appointment_date,a.appointment_time,a.status,a.reschedule_approval_required,a.updated_at,
             COALESCE(NULLIF(BTRIM(p.whatsapp_phone),''),NULLIF(BTRIM(pu.whatsapp_phone),'')) AS patient_whatsapp,
             COALESCE(p.sms_notifications_consent,FALSE) AS patient_sms_consent,
