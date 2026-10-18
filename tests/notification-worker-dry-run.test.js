@@ -124,6 +124,24 @@ test("worker checks current patient consent and phone before delivery", () => {
   assert.match(section, /return isNotificationRelevant\(/);
 });
 
+
+test("notification enqueue never uses a historical appointment phone as the recipient", () => {
+  const enqueueStart = serverSource.indexOf("async function enqueueAppointmentNotifications");
+  const enqueueEnd = serverSource.indexOf("\nasync function ", enqueueStart + 1);
+  assert.notEqual(enqueueStart, -1);
+  assert.notEqual(enqueueEnd, -1);
+  const enqueueSection = serverSource.slice(enqueueStart, enqueueEnd);
+  assert.match(
+    enqueueSection,
+    /COALESCE\(NULLIF\(BTRIM\(p\.phone\),''\),NULLIF\(BTRIM\(pu\.phone\),'')\) AS patient_phone/
+  );
+  assert.doesNotMatch(
+    enqueueSection,
+    /NULLIF\(BTRIM\(a\.patient_phone\),''\)/,
+    "a historical appointment phone must not be used as a new notification destination"
+  );
+});
+
 test("worker does not fall back to a historical appointment phone after the patient clears their current number", () => {
   assert.match(
     workerSource,
