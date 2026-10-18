@@ -2908,6 +2908,9 @@ app.patch("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
     );
     if (!currentResult.rowCount) return jsonError(res, 404, "الموعد غير موجود.");
     const current = currentResult.rows[0];
+    if (!["pending", "confirmed"].includes(current.status)) {
+      return jsonError(res, 409, "لا يمكن تعديل موعد ملغى أو منتهٍ.");
+    }
 
     const result = await withDatabaseTransaction(async (client) => {
       if (current.doctor_id) {
