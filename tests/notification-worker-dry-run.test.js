@@ -217,7 +217,7 @@ test("admin status updates cannot revive terminal appointments", () => {
   const routeSource = serverSource.slice(routeStart, routeEnd);
   assert.match(
     routeSource,
-    /WHERE id=\\$3 AND status IN \\('pending','confirmed'\\) AND \\(\\$1='cancelled' OR reschedule_approval_required=FALSE\\) RETURNING \\*/
+    /WHERE id=\$3 AND status IN \('pending','confirmed'\) AND \(\$1='cancelled' OR reschedule_approval_required=FALSE\) RETURNING \*/
   );
-  assert.match(routeSource, /409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى\\."/);
+  assert.match(routeSource, /409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى\."/);
 });
