@@ -208,3 +208,16 @@ test("cancellation and rescheduling invalidate only retryable unsent rows, not i
     );
   }
 });
+
+test("admin status updates cannot revive terminal appointments", () => {
+  const routeStart = serverSource.indexOf('app.patch("/api/admin/appointments/:id/status"');
+  const routeEnd = serverSource.indexOf('app.patch("/api/admin/appointments/:id"', routeStart + 1);
+  assert.notEqual(routeStart, -1, "admin appointment status route must exist");
+  assert.notEqual(routeEnd, -1, "admin appointment edit route must follow status route");
+  const routeSource = serverSource.slice(routeStart, routeEnd);
+  assert.match(
+    routeSource,
+    /WHERE id=\\$3 AND status IN \\('pending','confirmed'\\) AND \\(\\$1='cancelled' OR reschedule_approval_required=FALSE\\) RETURNING \\*/
+  );
+  assert.match(routeSource, /409, "تعذر تحديث حالة الموعد؛ ربما تغيرت حالته أو انتهى\\."/);
+});
