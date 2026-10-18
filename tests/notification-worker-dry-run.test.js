@@ -131,9 +131,9 @@ test("notification enqueue never uses a historical appointment phone as the reci
   assert.notEqual(enqueueStart, -1);
   assert.notEqual(enqueueEnd, -1);
   const enqueueSection = serverSource.slice(enqueueStart, enqueueEnd);
-  assert.match(
-    enqueueSection,
-    /COALESCE\(NULLIF\(BTRIM\(p\.phone\),''\),NULLIF\(BTRIM\(pu\.phone\),'')\) AS patient_phone/
+  assert.ok(
+    enqueueSection.includes("COALESCE(NULLIF(BTRIM(p.phone),''),NULLIF(BTRIM(pu.phone),'')) AS patient_phone"),
+    "notification recipients should use current patient or linked user phone"
   );
   assert.doesNotMatch(
     enqueueSection,
