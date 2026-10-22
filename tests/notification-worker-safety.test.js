@@ -35,18 +35,18 @@ function runScenario(scenario) {
           sql = String(sql);
           if (/^(BEGIN|COMMIT|ROLLBACK)/.test(sql.trim())) return { rowCount: 0, rows: [] };
           if (/UPDATE notification_outbox SET status='failed',attempts=/.test(sql)) return { rowCount: 0, rows: [] };
-          if (/SELECT n\\.id,n\\.appointment_id/.test(sql)) return { rowCount: 1, rows: [row] };
-          if (/SET status='processing',attempts=attempts\\+1/.test(sql)) return { rowCount: 1, rows: [{ lease_token: row.lease_token }] };
+          if (sql.includes("SELECT n.id,n.appointment_id")) return { rowCount: 1, rows: [row] };
+          if (sql.includes("SET status='processing',attempts=attempts+1")) return { rowCount: 1, rows: [{ lease_token: row.lease_token }] };
           throw new Error("Unexpected transaction query: " + sql);
         }, release() {} };
       }
       async query(sql, params) {
         sql = String(sql);
-        if (/SELECT a\\.status,a\\.doctor_id/.test(sql)) return { rowCount: 1, rows: [appointment] };
-        if (/UPDATE notification_outbox SET status=\\$2/.test(sql)) {
+        if (sql.includes("SELECT a.status,a.doctor_id")) return { rowCount: 1, rows: [appointment] };
+        if (sql.includes("UPDATE notification_outbox SET status=$2")) {
           return { rowCount: scenario === "unknown-outcome" ? 0 : 1, rows: [] };
         }
-        if (/UPDATE notification_outbox SET status='failed',attempts=\\$2/.test(sql)) {
+        if (sql.includes("UPDATE notification_outbox SET status='failed',attempts=$2")) {
           assert.equal(params[1], 5);
           assert.match(params[2], /unknown|unclear/i);
           return { rowCount: 1, rows: [] };
