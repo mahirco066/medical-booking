@@ -136,6 +136,26 @@ test("messageFor distinguishes a proposed reschedule from an approved change", (
   assert.match(messageFor({ ...row(), event_type: "rescheduled" }), /تم اعتماد تعديل موعدك/);
 });
 
+test("editing a pending booking does not claim the appointment was approved", () => {
+  assert.equal(
+    messageFor({
+      ...row(),
+      event_type: "rescheduled",
+      payload: { ...row().payload, appointment_status: "pending" }
+    }),
+    "تم تحديث وقت طلب حجزك لدى طبيب الاختبار ليكون يوم 20/10/2026 الساعة 14:30، وهو بانتظار التأكيد."
+  );
+  assert.equal(
+    messageFor({
+      ...row(),
+      event_type: "rescheduled",
+      recipient_role: "doctor",
+      payload: { ...row().payload, appointment_status: "pending", patient_name: "مريض الاختبار" }
+    }),
+    "تم تحديث وقت طلب حجز مريض الاختبار لدى طبيب الاختبار ليكون يوم 20/10/2026 الساعة 14:30، ويرجى مراجعة الطلب."
+  );
+});
+
 test("messageFor rejects unsupported event types", () => {
   assert.throws(() => messageFor({ ...row(), event_type: "unsupported" }), /Unsupported notification event type/);
 });
