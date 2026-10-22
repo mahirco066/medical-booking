@@ -71,6 +71,13 @@ function messageFor(row) {
         ? "تم اقتراح تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ". يرجى مراجعة المنصة والموافقة على الوقت الجديد."
         : "تم اقتراح تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "، وبانتظار موافقة المريض.";
     case "rescheduled":
+      // Editing a pending request changes its proposed slot, but does not mean
+      // the appointment itself was confirmed or that patient approval occurred.
+      if (p.appointment_status === "pending") {
+        return isPatient
+          ? "تم تحديث وقت طلب حجزك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "، وهو بانتظار التأكيد."
+          : "تم تحديث وقت طلب حجز " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "، ويرجى مراجعة الطلب.";
+      }
       return isPatient
         ? "تم اعتماد تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "."
         : "تم اعتماد تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ".";
