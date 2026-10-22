@@ -69,7 +69,7 @@ function runScenario(scenario) {
       providerCalls++;
       return { ok: true, status: 201, json: async () => ({ sid: "SM_ACCEPTED" }) };
     };
-    const worker = require(workerPath);
+    const worker = require(${JSON.stringify(workerPath)});
     Module._load = originalLoad;
     (async () => {
       try {
