@@ -322,7 +322,7 @@ async function dryRunTick() {
 
 if (process.env.NOTIFICATION_WORKER_TEST_MODE === "true") {
   // Export pure/provider-facing functions for isolated tests without starting a polling loop.
-  module.exports = { sendTwilioMessage, messageFor };
+  module.exports = { sendTwilioMessage, messageFor, claimOne, finish, processOne, pool };
 } else {
 timer = setInterval(() => {
   if (DRY_RUN) dryRunTick();
