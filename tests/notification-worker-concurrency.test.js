@@ -20,15 +20,15 @@ test("two independent worker processes cannot claim the same notification", { sk
   const schema = "notify_concurrency_" + crypto.randomBytes(6).toString("hex"); let made = false;
   try {
     await admin.query('CREATE SCHEMA "' + schema + '" '); made = true;
-    await admin.query('CREATE TABLE "' + schema + '" .appointments (id uuid PRIMARY KEY, status text NOT NULL, appointment_date date NOT NULL, appointment_time time NOT NULL)'.replace('" .', '" .'));
-    await admin.query('CREATE TABLE "' + schema + '" .notification_outbox (id uuid PRIMARY KEY, appointment_id uuid NOT NULL REFERENCES "' + schema + '" .appointments(id), event_type text NOT NULL, channel text NOT NULL, recipient_role text NOT NULL, recipient_phone text NOT NULL, payload jsonb NOT NULL DEFAULT \'{}\'::jsonb, attempts integer NOT NULL DEFAULT 0, scheduled_at timestamptz NOT NULL DEFAULT NOW(), status text NOT NULL DEFAULT \'pending\', created_at timestamptz NOT NULL DEFAULT NOW(), locked_at timestamptz, last_error text, updated_at timestamptz NOT NULL DEFAULT NOW(), sent_at timestamptz, provider_message_id text)'.replaceAll('" .', '" .'));
+    await admin.query('CREATE TABLE "' + schema + '".appointments (id uuid PRIMARY KEY, status text NOT NULL, appointment_date date NOT NULL, appointment_time time NOT NULL)'.replace('".', '".'));
+    await admin.query('CREATE TABLE "' + schema + '".notification_outbox (id uuid PRIMARY KEY, appointment_id uuid NOT NULL REFERENCES "' + schema + '".appointments(id), event_type text NOT NULL, channel text NOT NULL, recipient_role text NOT NULL, recipient_phone text NOT NULL, payload jsonb NOT NULL DEFAULT \'{}\'::jsonb, attempts integer NOT NULL DEFAULT 0, scheduled_at timestamptz NOT NULL DEFAULT NOW(), status text NOT NULL DEFAULT \'pending\', created_at timestamptz NOT NULL DEFAULT NOW(), locked_at timestamptz, last_error text, updated_at timestamptz NOT NULL DEFAULT NOW(), sent_at timestamptz, provider_message_id text)'.replaceAll('".', '".'));
     const aid = crypto.randomUUID(), nid = crypto.randomUUID();
-    await admin.query('INSERT INTO "' + schema + '" .appointments (id,status,appointment_date,appointment_time) VALUES ($1,\'pending\',CURRENT_DATE + 2,\'10:00\')'.replace('" .', '" .'), [aid]);
-    await admin.query('INSERT INTO "' + schema + '" .notification_outbox (id,appointment_id,event_type,channel,recipient_role,recipient_phone,payload) VALUES ($1,$2,\'booked\',\'sms\',\'patient\',\'+15555550123\',\'{}\'::jsonb)'.replace('" .', '" .'), [nid, aid]);
+    await admin.query('INSERT INTO "' + schema + '".appointments (id,status,appointment_date,appointment_time) VALUES ($1,\'pending\',CURRENT_DATE + 2,\'10:00\')'.replace('".', '".'), [aid]);
+    await admin.query('INSERT INTO "' + schema + '".notification_outbox (id,appointment_id,event_type,channel,recipient_role,recipient_phone,payload) VALUES ($1,$2,\'booked\',\'sms\',\'patient\',\'+15555550123\',\'{}\'::jsonb)'.replace('".', '".'), [nid, aid]);
     const scoped = new URL(baseUrl); scoped.searchParams.set("options", "-c search_path=" + schema);
     const results = await Promise.all([runClaim(scoped.toString()), runClaim(scoped.toString())]);
     assert.equal(results.filter(x => x.id === nid).length, 1, "exactly one worker should claim the row: " + JSON.stringify(results));
-    const state = await admin.query('SELECT status,attempts FROM "' + schema + '" .notification_outbox WHERE id=$1'.replace('" .', '" .'), [nid]);
+    const state = await admin.query('SELECT status,attempts FROM "' + schema + '".notification_outbox WHERE id=$1'.replace('".', '".'), [nid]);
     assert.equal(state.rows[0].status, "processing"); assert.equal(state.rows[0].attempts, 1);
   } finally { if (made) await admin.query('DROP SCHEMA IF EXISTS "' + schema + '" CASCADE'); await admin.end(); }
 });
