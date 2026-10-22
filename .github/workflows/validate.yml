@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/contact-numbers-notifications]
+    branches: [feature/contact-numbers-notifications, integration/notification-worker-main-sync]
 
 jobs:
   syntax:

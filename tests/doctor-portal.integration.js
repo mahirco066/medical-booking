@@ -250,6 +250,20 @@ async function main() {
   });
   expectStatus(cannotReopenCancelledAppointment, 409, "Cancelled appointments cannot be reopened through status update");
 
+  const adminCannotRescheduleCancelledAppointment = await request(`/api/admin/appointments/${appointmentConflictId}`, {
+    token: admin.token, method: "PATCH",
+    body: { appointment_date: "2099-01-16", appointment_time: "10:30" }
+  });
+  expectStatus(adminCannotRescheduleCancelledAppointment, 409, "Admin cannot reschedule a cancelled appointment");
+  const cancelledAppointmentOutboxAfterEdit = await pool.query(
+    "SELECT event_type,status FROM notification_outbox WHERE appointment_id=$1",
+    [appointmentConflictId]
+  );
+  assert.ok(
+    cancelledAppointmentOutboxAfterEdit.rows.every(row => row.event_type !== "rescheduled" && row.event_type !== "reschedule_requested"),
+    "Rejected admin edits must not enqueue reschedule notifications for a cancelled appointment"
+  );
+
   const validReschedule = await request(`/api/doctor/appointments/${appointmentAId}`, {
     token: doctorAUser.token, method: "PATCH",
     body: { appointment_date: date, appointment_time: "09:30" }
@@ -354,7 +368,7 @@ async function main() {
     "Rescheduling should queue a notice for the new appointment time"
   );
   assert.ok(
-    rescheduledOutbox.rows.filter(row => ["booked","confirmed","rescheduled","reminder_24h"].includes(row.event_type) &&
+    rescheduledOutbox.rows.filter(row => ["booked","confirmed","rescheduled","reschedule_requested","reminder_24h"].includes(row.event_type) &&
       String(row.payload && row.payload.appointment_time).slice(0, 5) !== "09:30")
       .every(row => row.status === "cancelled" || row.status === "sent"),
     "Rescheduling should invalidate unsent notifications for the old time"
@@ -402,7 +416,7 @@ async function main() {
     [appointmentBId]
   );
   assert.ok(
-    adminRescheduledOutbox.rows.some(row => row.event_type === "rescheduled" && row.status === "pending" &&
+    adminRescheduledOutbox.rows.some(row => row.event_type === "reschedule_requested" && row.status === "pending" &&
       row.payload && String(row.payload.appointment_time).slice(0, 5) === "10:30"),
     "Admin rescheduling should queue a notice for the new appointment time"
   );
@@ -413,6 +427,15 @@ async function main() {
   expectStatus(patientApprovesAdminReschedule, 200, "Owning patient can approve an admin-rescheduled appointment");
   assert.equal(patientApprovesAdminReschedule.data.appointment.reschedule_approval_required, false);
   assert.equal(patientApprovesAdminReschedule.data.appointment.status, "confirmed");
+  const adminApprovedOutbox = await pool.query(
+    "SELECT event_type,status,payload FROM notification_outbox WHERE appointment_id=$1",
+    [appointmentBId]
+  );
+  assert.ok(
+    adminApprovedOutbox.rows.some(row => row.event_type === "rescheduled" && row.status === "pending" &&
+      row.payload && String(row.payload.appointment_time).slice(0, 5) === "10:30"),
+    "Patient approval should queue the final reschedule notice"
+  );
 
   // Preserve login compatibility for legacy patient hashes stored as "salt:hash".
   const legacyPatientUsername = `legacy_patient_${suffix}`;

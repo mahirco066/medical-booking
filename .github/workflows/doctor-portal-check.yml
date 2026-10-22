@@ -94,6 +94,10 @@ jobs:
           exit 1
       - name: Test doctor and secretary permissions against temporary database
         run: node tests/doctor-portal.integration.js
+      - name: Verify concurrent notification claims using isolated PostgreSQL schema
+        env:
+          NOTIFICATION_WORKER_CONCURRENCY_TEST: "true"
+        run: node --test tests/notification-worker-concurrency.test.js
       - name: Show server log if integration test fails
         if: failure()
         run: cat /tmp/medical-booking-test.log || true
