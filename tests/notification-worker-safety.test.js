@@ -11,6 +11,8 @@ function runScenario(scenario) {
     const Module = require("node:module");
     const originalLoad = Module._load;
     let providerCalls = 0;
+    let finalStatus = null;
+    let unknownOutcomeRecorded = false;
     const scenario = process.env.SCENARIO;
     const appointment = {
       status: scenario === "cancelled" ? "cancelled" : scenario === "proposal" ? "confirmed" : "pending",
@@ -44,11 +46,13 @@ function runScenario(scenario) {
         sql = String(sql);
         if (sql.includes("SELECT a.status,a.doctor_id")) return { rowCount: 1, rows: [appointment] };
         if (sql.includes("UPDATE notification_outbox SET status=$2")) {
+          finalStatus = params[1];
           return { rowCount: scenario === "unknown-outcome" ? 0 : 1, rows: [] };
         }
         if (sql.includes("UPDATE notification_outbox SET status='failed',attempts=$2")) {
           assert.equal(params[1], 5);
           assert.match(params[2], /unknown|unclear/i);
+          unknownOutcomeRecorded = true;
           return { rowCount: 1, rows: [] };
         }
         throw new Error("Unexpected pool query: " + sql);
@@ -74,8 +78,13 @@ function runScenario(scenario) {
     (async () => {
       try {
         await worker.processOne();
-        if (scenario === "cancelled" || scenario === "proposal") assert.equal(providerCalls, 0);
-        else assert.equal(providerCalls, 1);
+        if (scenario === "cancelled" || scenario === "proposal") {
+          assert.equal(providerCalls, 0, "stale appointment must never call provider");
+          assert.equal(finalStatus, "cancelled", "stale notification should be marked cancelled");
+        } else {
+          assert.equal(providerCalls, 1, "provider acceptance should be simulated once");
+          assert.equal(unknownOutcomeRecorded, true, "ambiguous delivery must be marked failed with retry budget exhausted");
+        }
         await worker.pool.end();
         console.log("SCENARIO_PASS:" + scenario);
       } catch (error) { console.error(error); process.exitCode = 1; }
