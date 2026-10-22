@@ -131,7 +131,7 @@ test("messageFor covers confirmed, cancelled, rescheduled, and reminder events",
 });
 
 test("messageFor distinguishes a proposed reschedule from an approved change", () => {
-  assert.match(messageFor({ ...row(), event_type: "reschedule_requested" }), /اقترح الطبيب تعديل موعدك/);
+  assert.match(messageFor({ ...row(), event_type: "reschedule_requested" }), /تم اقتراح تعديل موعدك/);
   assert.match(messageFor({ ...row(), event_type: "reschedule_requested" }), /الموافقة على الوقت الجديد/);
   assert.match(messageFor({ ...row(), event_type: "rescheduled" }), /تم اعتماد تعديل موعدك/);
 });
