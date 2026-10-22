@@ -68,7 +68,7 @@ function messageFor(row) {
         : "تم إلغاء موعد " + patient + " لدى " + doctor + " بتاريخ " + date + " الساعة " + time + ".";
     case "reschedule_requested":
       return isPatient
-        ? "اقترح الطبيب تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ". يرجى مراجعة المنصة والموافقة على الوقت الجديد."
+        ? "تم اقتراح تعديل موعدك لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + ". يرجى مراجعة المنصة والموافقة على الوقت الجديد."
         : "تم اقتراح تعديل موعد " + patient + " لدى " + doctor + " ليكون يوم " + date + " الساعة " + time + "، وبانتظار موافقة المريض.";
     case "rescheduled":
       return isPatient
